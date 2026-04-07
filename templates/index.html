@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Parking Dashboard</title>
+    <style>
+        body { font-family: Arial; background: #111; color: #fff; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border: 1px solid #444; text-align: center; }
+        th { background: #222; }
+    </style>
+</head>
+<body>
+
+<h2>🚗 SMART PARKING DASHBOARD</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Plate</th>
+            <th>Time In</th>
+            <th>Time Out</th>
+            <th>Total Bill</th>
+        </tr>
+    </thead>
+    <tbody id="data"></tbody>
+</table>
+
+<script>
+async function loadData() {
+    const res = await fetch('/api/logs');
+    const data = await res.json();
+
+    let html = "";
+    data.forEach(row => {
+        html += `
+        <tr>
+            <td>${row.id}</td>
+            <td>${row.plate}</td>
+            <td>${row.time_in || '-'}</td>
+            <td>${row.time_out || '-'}</td>
+            <td>${row.total_bill || 0}</td>
+        </tr>`;
+    });
+
+    document.getElementById("data").innerHTML = html;
+}
+
+setInterval(loadData, 2000); // refresh tiap 2 detik
+loadData();
+</script>
+
+</body>
+</html>
