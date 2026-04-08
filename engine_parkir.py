@@ -103,44 +103,62 @@ class VideoCaptureAsync:
 
         return self.ret,self.frame
 
+import frame_shared
+from app import app
+import requests
+
 # =============================
-# DATABASE FUNCTIONS
+# DASHBOARD API INTEGRATION
 # =============================
+DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
+DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026")
+ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
+STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
+
+def sync_to_dashboard(plate, action, gate_id=1, v_type_id=1):
+    try:
+        headers = {"x-api-key": DASHBOARD_API_KEY}
+        data = {
+            "plate": plate,
+            "action": action.lower(),
+            "gate_id": gate_id,
+            "vehicle_type_id": v_type_id
+        }
+        res = requests.post(DASHBOARD_API_URL, json=data, headers=headers, timeout=5)
+        print(f"📡 Sync {action}: {plate} -> Dashboard ({res.status_code})")
+    except Exception as e:
+        print(f"❌ Dashboard Sync Error: {e}")
 
 def vehicle_enter(plate):
-
+    # Local Save (Legacy)
     cursor.execute(
         "INSERT INTO logs (plate,time_in) VALUES (%s,NOW())",
         (plate,)
     )
-
     db.commit()
+    # Sync to Dashboard
+    sync_to_dashboard(plate, 'entry')
 
 def vehicle_exit(plate):
-
     cursor.execute(
         "SELECT id,time_in FROM logs WHERE plate=%s AND time_out IS NULL",
         (plate,)
     )
-
     data = cursor.fetchone()
-
     if data:
-
         log_id,time_in=data
-
         duration=(time.time()-time_in.timestamp())/3600
-
         total=int(duration*BIAYA_PER_JAM)
-
         cursor.execute(
             "UPDATE logs SET time_out=NOW(),total_bill=%s WHERE id=%s",
             (total,log_id)
         )
-
         db.commit()
+    # Sync to Dashboard
+    sync_to_dashboard(plate, 'exit')
 
 # =============================
+# ... (rest of the file until main loop) ...
 # OCR SYSTEM
 # =============================
 
@@ -452,11 +470,21 @@ def main():
 
                 del parking_data[tid]
 
-        cv2.imshow("SMART PARKING AI",cv2.resize(frame,(960,540)))
+        # Update frame for streaming
+        frame_shared.latest_frame = frame.copy()
 
-        if cv2.waitKey(1)==27:
-            break
+        if ENABLE_WINDOW:
+            cv2.imshow("SMART PARKING AI",cv2.resize(frame,(960,540)))
+            if cv2.waitKey(1)==27:
+                break
 
     cv2.destroyAllWindows()
 
-main()
+def start_flask():
+    print(f"🌐 Starting Streaming Server on port {STREAM_PORT}...")
+    app.run(host="0.0.0.0", port=STREAM_PORT, debug=False, use_reloader=False)
+
+if __name__ == "__main__":
+    # Start Flask in a background thread
+    threading.Thread(target=start_flask, daemon=True).start()
+    main()
