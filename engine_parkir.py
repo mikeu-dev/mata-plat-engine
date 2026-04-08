@@ -1,6 +1,4 @@
 import os
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
-
 import cv2
 import numpy as np
 import time
@@ -81,18 +79,38 @@ ocr = PaddleOCR(lang="en")
 
 class VideoCaptureAsync:
 
-    def __init__(self,src):
+    def __init__(self, src):
+        self.src = src
+        self.cap = None
+        self.ret = False
+        self.frame = None
+        self.running = True
 
-        self.cap=cv2.VideoCapture(src,cv2.CAP_FFMPEG)
-        
-        # Minimalkan buffer internal OpenCV agar tidak delay
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        self.ret,self.frame=self.cap.read()
+        # Retry logic untuk inisialisasi awal
+        max_retries = 5
+        for i in range(max_retries):
+            print(f"📡 Mencoba menghubungkan ke kamera ({i+1}/{max_retries})...")
+            if self.cap is not None:
+                self.cap.release()
+                
+            self.cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+            # Beri waktu FFmpeg untuk handshake
+            time.sleep(2)
+            
+            self.ret, self.frame = self.cap.read()
+            if self.ret:
+                print("✅ Koneksi kamera stabil.")
+                break
+            else:
+                print(f"⚠️ Percobaan {i+1} gagal membaca frame.")
+                time.sleep(1)
 
-        self.running=True
+        if not self.ret:
+             print(f"❌ VideoCaptureAsync: Gagal total membaca dari {src}")
 
-        threading.Thread(target=self.update,daemon=True).start()
+        threading.Thread(target=self.update, daemon=True).start()
 
     def update(self):
 
