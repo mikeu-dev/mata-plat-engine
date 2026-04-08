@@ -17,7 +17,9 @@ load_dotenv()
 
 # DETEKSI DEVICE (GPU/CPU)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEBUG_MODE = os.getenv("DEBUG_MODE", "False") == "True"
 print(f"🚀 Menggunakan Device: {DEVICE}")
+print(f"🔧 Debug Mode: {'AKTIF' if DEBUG_MODE else 'NON-AKTIF'}")
 
 # =============================
 # DATABASE
@@ -74,6 +76,10 @@ class VideoCaptureAsync:
     def __init__(self,src):
 
         self.cap=cv2.VideoCapture(src,cv2.CAP_FFMPEG)
+        
+        # Minimalkan buffer internal OpenCV agar tidak delay
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
         self.ret,self.frame=self.cap.read()
 
         self.running=True
@@ -83,12 +89,15 @@ class VideoCaptureAsync:
     def update(self):
 
         while self.running:
-
+            # Selalu ambil frame paling baru dari stream
             ret,frame=self.cap.read()
 
             if ret:
                 self.ret=ret
                 self.frame=frame
+            
+            # Jika buffer mulai menumpuk, lewati frame lama (opsional untuk stream RTSP)
+            # time.sleep(0.001)
 
     def read(self):
 
@@ -240,7 +249,8 @@ def main():
 
             for box,tid,cls_idx in zip(boxes,ids,clss):
 
-                if cls_idx not in VEHICLE_CLASSES:
+                # Di Debug Mode, kita proses semua kelas. Normalnya hanya VEHICLE_CLASSES.
+                if not DEBUG_MODE and cls_idx not in VEHICLE_CLASSES:
                     continue
 
                 current_ids.add(tid)
@@ -311,7 +321,8 @@ def main():
                         p["state"]="moving"
                         p["park_start"]=None
 
-                is_parking = p["state"]=="stopped"
+                # Di Debug Mode, abaikan status parkir (langsung dianggap parkir)
+                is_parking = True if DEBUG_MODE else (p["state"]=="stopped")
 
                 # =============================
                 # OCR
