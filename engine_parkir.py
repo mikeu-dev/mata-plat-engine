@@ -306,17 +306,25 @@ def main():
 
     if camera_url is None:
         print("❌ Gagal mendapatkan konfigurasi kamera setelah beberapa percobaan. Engine dihentikan.")
-        return
+        os._exit(1)
 
     cap = VideoCaptureAsync(camera_url)
     frame_count = 0
+    fail_count = 0
 
     while True:
-
-        ret,frame=cap.read()
+        ret, frame = cap.read()
 
         if not ret:
+            fail_count += 1
+            if fail_count > 50:
+                print("❌ Koneksi kamera terputus secara permanen. Menghentikan program...")
+                # Berikan waktu sebentar untuk print pesan
+                time.sleep(1)
+                os._exit(1) # Gunakan os._exit untuk mematikan semua thread sekaligus
             continue
+        
+        fail_count = 0 # Reset jika berhasil ambil frame
 
         frame_count+=1
 
