@@ -148,27 +148,59 @@ ocr_queue=Queue()
 parking_data={}
 
 def preprocess_plate(img):
+    # Perbesar gambar untuk detail lebih baik
+    img=cv2.resize(img,None,fx=2,fy=2,interpolation=cv2.INTER_CUBIC)
 
-    img=cv2.resize(img,None,fx=2,fy=2)
-
+    # Convert ke Gray
     gray=cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-    gray=cv2.bilateralFilter(gray,11,17,17)
+    # Noise reduction ringan agar tidak merusak karakter
+    gray=cv2.bilateralFilter(gray,9,75,75)
 
-    gray=cv2.adaptiveThreshold(
-        gray,255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,11,2
-    )
+    # Kita tidak lagi menggunakan adaptiveThreshold secara agresif
+    # karena PaddleOCR bekerja lebih baik pada kontras alami.
+    # Namun, kita tingkatkan kontras menggunakan CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    gray = clahe.apply(gray)
 
     return gray
 
 def validate_plate(text):
+    # 1. Pembersihan awal (Hapus spasi dan simbol)
+    text = re.sub(r'[^A-Z0-9]', '', text.upper())
+    if len(text) < 4: return None
 
-    text=text.replace(" ","").upper()
+    # 2. Logika Koreksi Berdasarkan Posisi (Standard Plat Indonesia)
+    # Format: [HURUF (1-2)] [ANGKA (1-4)] [HURUF (1-3)]
+    
+    # Mapping karakter yang sering tertukar
+    to_alpha = str.maketrans('01245678', 'OIZASGTB') 
+    to_num   = str.maketrans('OIZASGTB', '01245678')
+    
+    # Mencoba mencari pembagian blok paling masuk akal
+    # Kita cari angka pertama dan angka terakhir di tengah
+    match = re.search(r'^([A-Z0-9]{1,2})(\d{1,4})([A-Z0-9]{1,3})$', text)
+    
+    if match:
+        pref, mid, suff = match.groups()
+    else:
+        # Jika tidak ada blok angka yang jelas, coba tebak pembagian 2-4-2
+        # atau gunakan regex fleksibel
+        match = re.search(r'^([A-Z0-9]{1,2})([A-Z0-9]{1,4})([A-Z0-9]{1,3})$', text)
+        if not match: return None
+        pref, mid, suff = match.groups()
 
-    if re.match(PLATE_REGEX,text):
-        return text
+    # Koreksi Karakter
+    pref = pref.translate(to_alpha).replace(" ", "")
+    mid  = mid.translate(to_num).replace(" ", "")
+    suff = suff.translate(to_alpha).replace(" ", "")
+
+    # Gabungkan kembali
+    final = pref + mid + suff
+
+    # Validasi akhir dengan regex utama
+    if re.match(PLATE_REGEX, final):
+        return final
 
     return None
 
@@ -183,17 +215,23 @@ def ocr_worker():
         tid,crop=ocr_queue.get()
 
         try:
-
             img=preprocess_plate(crop)
-
-            result=ocr.ocr(img)
+            
+            # Pada versi stable 2.x, ocr() mengembalikan list of pages
+            # Setiap page berisi list of [box, (text, confidence)]
+            result=ocr.ocr(img, cls=False)
 
             plate=""
 
-            if result:
+            if result and isinstance(result, list):
                 for line in result:
-                    for word in line:
-                        plate+=word[1][0]
+                    if line is None: continue
+                    for res in line:
+                        # res format: [[x,y], [x,y], [x,y], [x,y]], ('TEXT', 0.99)
+                        if isinstance(res, list) and len(res) > 1:
+                            text_info = res[1]
+                            if isinstance(text_info, tuple) and len(text_info) > 0:
+                                plate += str(text_info[0])
 
             plate=validate_plate(plate)
 
