@@ -6,6 +6,9 @@ import numpy as np
 import time
 import threading
 import re
+import requests
+import json
+import argparse
 from queue import Queue
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
@@ -14,6 +17,11 @@ from dotenv import load_dotenv
 import torch
 
 load_dotenv()
+
+# Setup CLI Arguments
+parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking System')
+parser.add_argument('--gate', type=str, help='ID Gerbang (misal: 1 atau 3)')
+args = parser.parse_args()
 
 # DETEKSI DEVICE (GPU/CPU)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -110,12 +118,18 @@ import requests
 # =============================
 # DASHBOARD API INTEGRATION
 # =============================
+
+# Setup CLI Arguments
+parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking System')
+parser.add_argument('--gate', type=str, help='ID Gerbang (default dari .env)')
+args = parser.parse_args()
+
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
 DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026")
 ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
-GATE_ID = int(os.getenv("GATE_ID", 1))
+GATE_ID = args.gate if args.gate else os.getenv("GATE_ID", "1")
 
 def fetch_camera_config():
     """Mengambil URL Kamera dari Dashboard API berdasarkan GATE_ID"""
