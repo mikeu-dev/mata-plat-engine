@@ -11,8 +11,13 @@ from ultralytics import YOLO
 from paddleocr import PaddleOCR
 import mysql.connector
 from dotenv import load_dotenv
+import torch
 
 load_dotenv()
+
+# DETEKSI DEVICE (GPU/CPU)
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"🚀 Menggunakan Device: {DEVICE}")
 
 # =============================
 # DATABASE
@@ -49,14 +54,14 @@ VEHICLE_CLASSES = [2,3,5,7]
 PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 
 # =============================
-# MODEL GPU
+# MODEL
 # =============================
 
 model_vehicle = YOLO("yolov8l.pt")
-model_vehicle.to("cuda")
+model_vehicle.to(DEVICE)
 
 model_plate = YOLO("license_plate_detector.pt")
-model_plate.to("cuda")
+model_plate.to(DEVICE)
 
 ocr = PaddleOCR(lang="en")
 
@@ -221,7 +226,7 @@ def main():
             conf=0.35,
             imgsz=960,
             tracker="bytetrack.yaml",
-            device=0,
+            device=DEVICE,
             verbose=False
         )
 
@@ -320,7 +325,7 @@ def main():
                         roi,
                         conf=0.45,
                         imgsz=416,
-                        device=0,
+                        device=DEVICE,
                         verbose=False
                     )
 

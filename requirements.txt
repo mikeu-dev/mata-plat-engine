@@ -65,8 +65,10 @@ nvidia-nvshmem-cu13==3.4.5
 nvidia-nvtx==13.0.85
 opencv-contrib-python==4.10.0.84
 opencv-python==4.13.0.92
+opt-einsum==3.3.0
 packaging==26.0
 paddleocr==3.4.0
+paddlepaddle==3.3.1
 paddlex==3.4.3
 pandas==3.0.2
 pillow==12.2.0
@@ -94,6 +96,7 @@ requests==2.33.1
 rich==14.3.3
 rpds-py==0.30.0
 ruamel.yaml==0.19.1
+safetensors==0.7.0
 scipy==1.17.1
 setuptools==81.0.0
 shapely==2.1.2
