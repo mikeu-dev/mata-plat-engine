@@ -10,27 +10,30 @@ from queue import Queue
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
 import mysql.connector
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # =============================
 # DATABASE
 # =============================
 
 db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="",
-    database="parking_db"
+    host=os.getenv("DB_HOST", "localhost"),
+    user=os.getenv("DB_USER", "root"),
+    password=os.getenv("DB_PASS", ""),
+    database=os.getenv("DB_NAME", "parking_db")
 )
 
 cursor = db.cursor()
 
-BIAYA_PER_JAM = 5000
+BIAYA_PER_JAM = int(os.getenv("BIAYA_PER_JAM", 5000))
 
 # =============================
 # KONFIGURASI
 # =============================
 
-RTSP_URL = "rtsp://admin:m3diapratama@10.232.88.154:554/stream"
+RTSP_URL = os.getenv("RTSP_URL", "rtsp://admin:m3diapratama@10.232.88.154:554/stream")
 
 FRAME_SKIP = 2
 

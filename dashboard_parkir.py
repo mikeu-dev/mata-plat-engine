@@ -1,9 +1,18 @@
+import os
 import streamlit as st
 import pandas as pd
 import time
 from sqlalchemy import create_engine
+from dotenv import load_dotenv
 
-engine=create_engine("mysql+mysqlconnector://root:@localhost/parking_db")
+load_dotenv()
+
+db_user = os.getenv("DB_USER", "root")
+db_pass = os.getenv("DB_PASS", "")
+db_host = os.getenv("DB_HOST", "localhost")
+db_name = os.getenv("DB_NAME", "parking_db")
+
+engine=create_engine(f"mysql+mysqlconnector://{db_user}:{db_pass}@{db_host}/{db_name}")
 
 st.set_page_config(page_title="Smart Parking Dashboard",layout="wide")
 
