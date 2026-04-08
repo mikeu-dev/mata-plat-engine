@@ -111,21 +111,45 @@ import requests
 # DASHBOARD API INTEGRATION
 # =============================
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
+DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026")
 ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
+GATE_ID = int(os.getenv("GATE_ID", 1))
 
-def sync_to_dashboard(plate, action, gate_id=1, v_type_id=1):
+def fetch_camera_config():
+    """Mengambil URL Kamera dari Dashboard API berdasarkan GATE_ID"""
+    print(f"📡 Mencari konfigurasi untuk Gerbang ID: {GATE_ID}...")
+    try:
+        headers = {"x-api-key": DASHBOARD_API_KEY}
+        res = requests.get(DASHBOARD_CONFIG_URL, headers=headers, timeout=10)
+        if res.status_code == 200:
+            gates = res.json().get("gates", [])
+            gate = next((g for g in gates if g["id"] == GATE_ID), None)
+            if gate and gate.get("cameraUrl"):
+                print(f"✅ Gerbang ditemukan: {gate['name']}")
+                print(f"📸 URL Kamera: {gate['cameraUrl']}")
+                return gate["cameraUrl"]
+            else:
+                print(f"⚠️ Gerbang ID {GATE_ID} tidak ditemukan atau URL kosong di Dashboard.")
+        else:
+            print(f"❌ Gagal mengambil config Dashboard (Status: {res.status_code})")
+    except Exception as e:
+        print(f"❌ Error saat fetch config: {e}")
+    
+    return None
+
+def sync_to_dashboard(plate, action, v_type_id=1):
     try:
         headers = {"x-api-key": DASHBOARD_API_KEY}
         data = {
             "plate": plate,
             "action": action.lower(),
-            "gate_id": gate_id,
+            "gate_id": GATE_ID,
             "vehicle_type_id": v_type_id
         }
         res = requests.post(DASHBOARD_API_URL, json=data, headers=headers, timeout=5)
-        print(f"📡 Sync {action}: {plate} -> Dashboard ({res.status_code})")
+        print(f"📡 Sync {action}: {plate} -> Dashboard (Status: {res.status_code})")
     except Exception as e:
         print(f"❌ Dashboard Sync Error: {e}")
 
@@ -268,10 +292,24 @@ threading.Thread(target=ocr_worker,daemon=True).start()
 # =============================
 
 def main():
+    # Fetch camera config from Dashboard
+    camera_url = None
+    retry_count = 0
+    max_retries = 5
 
-    cap=VideoCaptureAsync(RTSP_URL)
+    while camera_url is None and retry_count < max_retries:
+        camera_url = fetch_camera_config()
+        if camera_url is None:
+            retry_count += 1
+            print(f"🔄 Mengulang pengambilan config dalam 5 detik ({retry_count}/{max_retries})...")
+            time.sleep(5)
 
-    frame_count=0
+    if camera_url is None:
+        print("❌ Gagal mendapatkan konfigurasi kamera setelah beberapa percobaan. Engine dihentikan.")
+        return
+
+    cap = VideoCaptureAsync(camera_url)
+    frame_count = 0
 
     while True:
 
