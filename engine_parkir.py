@@ -150,14 +150,29 @@ STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
 GATE_ID = args.gate if args.gate else os.getenv("GATE_ID", "1")
 
 def get_hardware_id():
-    """Mengambil MAC Address sebagai identitas unik (Hardware ID)"""
+    """Mengambil atau membuat ID unik (Hardware ID) untuk instansi engine ini"""
+    # 1. Coba baca dari file .hwid if exists
+    hwid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hwid")
+    if os.path.exists(hwid_file):
+        try:
+            with open(hwid_file, "r") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+
     try:
         import uuid
-        mac_num = uuid.getnode()
-        mac_hex = ':'.join(['{:02x}'.format((mac_num >> i) & 0xff) for i in range(0, 8*6, 8)][::-1])
+        # Buat unique ID baru (format mirip MAC address: 12 karakter hex)
+        new_id = uuid.uuid4().hex[:12]
+        mac_hex = ':'.join(new_id[i:i+2] for i in range(0, 12, 2))
+        
+        # Simpan ke file agar tidak berubah saat direstart
+        with open(hwid_file, "w") as f:
+            f.write(mac_hex)
+            
         return mac_hex
     except Exception as e:
-        print(f"⚠️ Gagal mendapatkan Hardware ID: {e}")
+        print(f"⚠️ Gagal mendapatkan/membuat Hardware ID: {e}")
         return "UNKNOWN"
 
 def fetch_camera_config():
