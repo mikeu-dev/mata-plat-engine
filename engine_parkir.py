@@ -46,7 +46,7 @@ BIAYA_PER_JAM = int(os.getenv("BIAYA_PER_JAM", 5000))
 # KONFIGURASI
 # =============================
 
-RTSP_URL = os.getenv("RTSP_URL", "rtsp://admin:m3diapratama@10.232.88.154:554/stream")
+RTSP_URL = os.getenv("RTSP_URL", "rtsp://stream:Pratama62@192.168.16.2:554/Streaming/Channels/101")
 
 FRAME_SKIP = 2
 
@@ -65,7 +65,7 @@ PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 # MODEL
 # =============================
 
-model_vehicle = YOLO("yolov8l.pt")
+model_vehicle = YOLO("yolov8n.pt")
 model_vehicle.to(DEVICE)
 
 model_plate = YOLO("license_plate_detector.pt")
@@ -145,7 +145,7 @@ args = parser.parse_args()
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
 DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026")
-ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
+ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "true") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
 GATE_ID = args.gate if args.gate else os.getenv("GATE_ID", "1")
 
