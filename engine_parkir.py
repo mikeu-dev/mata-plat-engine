@@ -100,13 +100,21 @@ class VideoCaptureAsync:
 
     def update(self):
         while self.running:
+            if self.cap is None: break
             ret, frame = self.cap.read()
             if ret:
                 self.ret = ret
                 self.frame = frame
+            else:
+                time.sleep(0.1)
 
     def read(self):
         return self.ret, self.frame
+
+    def stop(self):
+        self.running = False
+        if self.cap:
+            self.cap.release()
 
 import frame_shared
 from app import app
@@ -225,14 +233,24 @@ class CamEngine:
         self.type = config['type']
         self.parking_data = {}
         self.running = True
+        self.cap = None
+
+    def stop(self):
+        print(f"🛑 Menghentikan Engine: {self.name}")
+        self.running = False
+        if self.cap:
+            self.cap.stop()
+        if ENABLE_WINDOW:
+            try: cv2.destroyWindow(f"CAM: {self.name}")
+            except: pass
 
     def process(self):
         print(f"🚀 Memulai Engine: {self.name} ({self.type})")
-        cap = VideoCaptureAsync(self.url)
+        self.cap = VideoCaptureAsync(self.url)
         frame_count = 0
 
         while self.running:
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if not ret: continue
             
             frame_count += 1
@@ -312,21 +330,50 @@ def start_flask():
     app.run(host="0.0.0.0", port=STREAM_PORT, debug=False, use_reloader=False)
 
 def main():
-    configs = None
-    while configs is None:
-        configs = fetch_configs()
-        if not configs:
-            print("⏳ Menunggu konfigurasi dari Dashboard...")
-            time.sleep(10)
-
+    started_engines = {} # gate_id -> CamEngine
     threading.Thread(target=start_flask, daemon=True).start()
     
-    for cfg in configs:
-        engine = CamEngine(cfg)
-        threading.Thread(target=engine.process, daemon=True).start()
-
-    print("✅ Semua Engine Aktif.")
-    while True: time.sleep(1)
+    print("🚀 Mata Plat Engine Manager Aktif (Polling setiap 30 detik)")
+    
+    while True:
+        try:
+            configs = fetch_configs()
+            if configs is None:
+                if not started_engines:
+                    print("⏳ Menunggu konfigurasi awal dari Dashboard...")
+                else:
+                    print("⚠️ Gagal sinkronisasi konfigurasi, mencoba lagi...")
+            else:
+                current_active_ids = [str(c['id']) for c in configs if c.get('isActive', True)]
+                
+                # 1. Hentikan engine yang tidak lagi aktif atau dihapus
+                for gid in list(started_engines.keys()):
+                    if gid not in current_active_ids:
+                        started_engines[gid].stop()
+                        del started_engines[gid]
+                
+                # 2. Jalankan engine baru atau update yang berubah
+                for cfg in configs:
+                    if not cfg.get('isActive', True): continue
+                    
+                    gid = str(cfg['id'])
+                    if gid not in started_engines:
+                        engine = CamEngine(cfg)
+                        started_engines[gid] = engine
+                        threading.Thread(target=engine.process, daemon=True).start()
+                    else:
+                        # Cek jika URL berubah (perlu restart thread)
+                        if started_engines[gid].url != cfg['cameraUrl']:
+                            print(f"🔄 Konfigurasi berubah untuk {cfg['name']}, merestart thread...")
+                            started_engines[gid].stop()
+                            engine = CamEngine(cfg)
+                            started_engines[gid] = engine
+                            threading.Thread(target=engine.process, daemon=True).start()
+                            
+        except Exception as e:
+            print(f"❌ Error in Manager Loop: {e}")
+            
+        time.sleep(30)
 
 if __name__ == "__main__":
     main()
