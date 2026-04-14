@@ -25,9 +25,9 @@ const envConfig = parseEnv(path.resolve(__dirname, '.env'));
 module.exports = {
   apps: [
     {
-      name: 'mata-plat-engine',
+      name: 'smartparking-engine',
       script: './engine_parkir.py',
-      interpreter: './venv/bin/python',
+      interpreter: '/home/ramahai/smartparking/smart-parking-engine/venv/bin/python',
       cwd: './',
       watch: false,
       autorestart: true,
