@@ -151,7 +151,7 @@ def fetch_configs():
     headers = {"x-api-key": DASHBOARD_API_KEY}
     hwid = get_hardware_id()
     params = {"hwid": hwid}
-    if args.gate: params = {"id": args.gate}
+    if args.gate: params["id"] = args.gate
 
     try:
         response = requests.get(DASHBOARD_CONFIG_URL, params=params, headers=headers, timeout=10)
