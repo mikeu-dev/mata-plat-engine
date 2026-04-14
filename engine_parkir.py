@@ -320,7 +320,7 @@ class CamEngine:
                 if tid not in current_ids:
                     del self.parking_data[tid]
 
-            frame_shared.latest_frame = frame.copy()
+            frame_shared.latest_frames[self.gate_id] = frame.copy()
             if ENABLE_WINDOW:
                 cv2.imshow(f"CAM: {self.name}", cv2.resize(frame, (640, 360)))
                 if cv2.waitKey(1) == 27: break

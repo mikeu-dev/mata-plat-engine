@@ -94,11 +94,13 @@ def logs():
 
     return jsonify(data)
 
-def gen_frames():
+def gen_frames(gate_id):
     while True:
-        if frame_shared.latest_frame is not None:
+        # Ambil frame spesifik sesuai ID gate
+        frame = frame_shared.latest_frames.get(gate_id)
+        if frame is not None:
             # Encode frame sebagai JPEG
-            ret, buffer = cv2.imencode('.jpg', frame_shared.latest_frame)
+            ret, buffer = cv2.imencode('.jpg', frame)
             if not ret:
                 continue
             frame_bytes = buffer.tobytes()
@@ -107,16 +109,16 @@ def gen_frames():
         else:
             time.sleep(0.1)
 
-@app.route("/video_feed")
-def video_feed():
+@app.route("/video_feed/<int:gate_id>")
+def video_feed(gate_id):
     """
-    MJPEG Video Stream
+    MJPEG Video Stream per Gate
     ---
     responses:
       200:
-        description: Continuous MJPEG stream of the latest camera frame
+        description: Continuous MJPEG stream of the specific camera frame
     """
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(gen_frames(gate_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
     app.run(debug=os.getenv("FLASK_DEBUG", "True") == "True")
