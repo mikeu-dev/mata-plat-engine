@@ -54,16 +54,7 @@ MOVE_CONFIRM_FRAMES = 4
 VEHICLE_CLASSES = [2,3,5,7]
 PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 
-# =============================
-# MODEL
-# =============================
-
-model_vehicle = YOLO("yolov8n.pt")
-model_vehicle.to(DEVICE)
-
-model_plate = YOLO("license_plate_detector.pt")
-model_plate.to(DEVICE)
-
+# Global OCR stays centralized via queue
 ocr = PaddleOCR(lang="en")
 
 # =============================
@@ -234,6 +225,13 @@ class CamEngine:
         self.parking_data = {}
         self.running = True
         self.cap = None
+        
+        # Load local AI models for this specific camera (Isolasi Tracker)
+        print(f"📦 Loading AI Models for {self.name}...")
+        self.model_vehicle = YOLO("yolov8n.pt")
+        self.model_vehicle.to(DEVICE)
+        self.model_plate = YOLO("license_plate_detector.pt")
+        self.model_plate.to(DEVICE)
 
     def stop(self):
         print(f"🛑 Menghentikan Engine: {self.name}")
@@ -256,7 +254,8 @@ class CamEngine:
             frame_count += 1
             if frame_count % FRAME_SKIP != 0: continue
 
-            results = model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
+            # Gunakan model lokal agar tracker tidak bercampur antar kamera
+            results = self.model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
             current_ids = set()
 
             if results[0].boxes.id is not None:
@@ -299,7 +298,7 @@ class CamEngine:
 
                     if is_parking and time.time() - p["ocr_time"] > 2:
                         roi = frame[y1:y2, x1:x2]
-                        plate_res = model_plate.predict(roi, conf=0.45, imgsz=320, verbose=False)
+                        plate_res = self.model_plate.predict(roi, conf=0.45, imgsz=320, verbose=False)
                         if len(plate_res[0].boxes) > 0:
                             pb = plate_res[0].boxes.xyxy[0].cpu().numpy().astype(int)
                             crop = roi[pb[1]:pb[3], pb[0]:pb[2]]
