@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, jsonify, render_template, Response
+from flask import Flask, jsonify, redirect, Response
 import mysql.connector
 from dotenv import load_dotenv
 from flasgger import Swagger
@@ -58,13 +58,13 @@ import cv2
 @app.route("/")
 def index():
     """
-    Main Index Page
+    Redirect to API documentation
     ---
     responses:
-      200:
-        description: The main dashboard index page
+      302:
+        description: Redirects to /api/v1/docs
     """
-    return render_template("index.html")
+    return redirect("/api/v1/docs")
 
 @app.route("/api/logs")
 def logs():
