@@ -150,7 +150,17 @@ def fetch_configs():
             data = response.json()
             if data.get('success'):
                 return data.get('cameras')
-    except: pass
+            else:
+                print(f"⚠️ Dashboard API mengembalikan success: false: {data.get('message', 'No message')}")
+        else:
+            print(f"❌ Dashboard API error {response.status_code}: {response.text[:100]}")
+    except requests.exceptions.ConnectionError:
+        print(f"❌ Gagal terhubung ke Dashboard (Connection Refused). Periksa URL: {DASHBOARD_CONFIG_URL}")
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout saat menghubungi Dashboard ({DASHBOARD_CONFIG_URL})")
+    except Exception as e:
+        print(f"❌ Error saat mengambil konfigurasi: {str(e)}")
+    
     return None
 
 def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
