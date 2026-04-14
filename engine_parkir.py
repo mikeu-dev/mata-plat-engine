@@ -325,8 +325,9 @@ class CamEngine:
                 if cv2.waitKey(1) == 27: break
 
 def start_flask():
-    print(f"🌐 Starting Streaming Server on port {STREAM_PORT}...")
-    app.run(host="0.0.0.0", port=STREAM_PORT, debug=False, use_reloader=False)
+    from waitress import serve
+    print(f"🌐 Starting Production Streaming Server on port {STREAM_PORT}...")
+    serve(app, host="0.0.0.0", port=STREAM_PORT, _quiet=True)
 
 def main():
     started_engines = {} # gate_id -> CamEngine
