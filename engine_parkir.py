@@ -340,13 +340,29 @@ def start_flask():
     print(f"🌐 Starting Production Streaming Server on port {STREAM_PORT}...")
     serve(app, host="0.0.0.0", port=STREAM_PORT, _quiet=True)
 
+import signal
+
 def main():
     started_engines = {} # gate_id -> CamEngine
+    running = True
+
+    def graceful_shutdown(signum=None, frame=None):
+        nonlocal running
+        sig_name = signal.Signals(signum).name if signum else "UNKNOWN"
+        print(f"\n🛑 Menerima sinyal {sig_name}, menghentikan semua engine...")
+        running = False
+        for gid, eng in started_engines.items():
+            eng.stop()
+        print("✅ Semua engine dihentikan. Bye!")
+
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+
     threading.Thread(target=start_flask, daemon=True).start()
     
     print("🚀 Mata Plat Engine Manager Aktif (Polling setiap 30 detik)")
     
-    while True:
+    while running:
         try:
             configs = fetch_configs()
             if configs is None:
@@ -382,9 +398,15 @@ def main():
                             threading.Thread(target=engine.process, daemon=True).start()
                             
         except Exception as e:
+            if not running:
+                break
             print(f"❌ Error in Manager Loop: {e}")
             
-        time.sleep(30)
+        # Sleep dalam interval kecil agar bisa di-interrupt dengan bersih
+        for _ in range(30):
+            if not running:
+                break
+            time.sleep(1)
 
 if __name__ == "__main__":
     main()

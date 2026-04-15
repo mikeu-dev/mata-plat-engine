@@ -52,7 +52,8 @@ module.exports = {
       autorestart: true,
       restart_delay: 5000,
       max_restarts: 15,
-      max_memory_restart: '1G',
+      max_memory_restart: '4G',
+      kill_timeout: 10000, // 10 detik untuk graceful shutdown
       // Logging
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       error_file: './logs/engine-error.log',
