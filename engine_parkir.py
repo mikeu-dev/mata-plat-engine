@@ -116,7 +116,7 @@ from app import app
 
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
 DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
-DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026")
+DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026").strip()
 ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "true") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
 
