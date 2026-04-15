@@ -1,4 +1,5 @@
 import os
+import sys
 import cv2
 import numpy as np
 import time
@@ -153,6 +154,9 @@ def fetch_configs():
         elif response.status_code == 202:
             # Pending pairing — admin belum memasangkan HWID ini ke gate
             print(f"⏳ HWID {hwid} terdeteksi oleh Dashboard, menunggu dipasangkan oleh admin...")
+        elif response.status_code == 404:
+            # HWID belum dikenali atau endpoint belum di-deploy ulang
+            print(f"⚠️ Dashboard mengembalikan 404. Perangkat belum terdaftar atau dashboard perlu rebuild.")
         else:
             print(f"❌ Dashboard API error {response.status_code}: {response.text[:100]}")
     except requests.exceptions.ConnectionError:
@@ -354,6 +358,7 @@ def main():
         for gid, eng in started_engines.items():
             eng.stop()
         print("✅ Semua engine dihentikan. Bye!")
+        sys.exit(0)  # Exit code 0 agar PM2 tahu ini bukan crash
 
     signal.signal(signal.SIGINT, graceful_shutdown)
     signal.signal(signal.SIGTERM, graceful_shutdown)

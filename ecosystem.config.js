@@ -50,10 +50,12 @@ module.exports = {
       // Process management
       watch: false,
       autorestart: true,
-      restart_delay: 5000,
-      max_restarts: 15,
+      restart_delay: 30000,  // 30 detik — sesuai polling interval engine
+      max_restarts: 100,     // Toleran karena ini long-running polling service
+      min_uptime: '30s',     // Anggap crash jika mati <30 detik
       max_memory_restart: '4G',
-      kill_timeout: 10000, // 10 detik untuk graceful shutdown
+      kill_timeout: 15000,   // 15 detik untuk graceful shutdown
+      stop_exit_codes: [0],  // Exit code 0 = shutdown bersih, jangan restart
       // Logging
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       error_file: './logs/engine-error.log',
