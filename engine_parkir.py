@@ -18,7 +18,6 @@ load_dotenv()
 
 # Setup CLI Arguments
 parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking System')
-parser.add_argument('--gate', type=str, help='ID Gerbang (misal: 1 atau 3)')
 args = parser.parse_args()
 
 # DETEKSI DEVICE (GPU/CPU)
@@ -142,7 +141,6 @@ def fetch_configs():
     headers = {"x-api-key": DASHBOARD_API_KEY}
     hwid = get_hardware_id()
     params = {"hwid": hwid}
-    if args.gate: params["id"] = args.gate
 
     try:
         response = requests.get(DASHBOARD_CONFIG_URL, params=params, headers=headers, timeout=10)
@@ -152,6 +150,9 @@ def fetch_configs():
                 return data.get('cameras')
             else:
                 print(f"⚠️ Dashboard API mengembalikan success: false: {data.get('message', 'No message')}")
+        elif response.status_code == 202:
+            # Pending pairing — admin belum memasangkan HWID ini ke gate
+            print(f"⏳ HWID {hwid} terdeteksi oleh Dashboard, menunggu dipasangkan oleh admin...")
         else:
             print(f"❌ Dashboard API error {response.status_code}: {response.text[:100]}")
     except requests.exceptions.ConnectionError:
