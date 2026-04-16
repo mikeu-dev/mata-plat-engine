@@ -38,9 +38,20 @@ print(f"🛠️ Debug Mode: {'AKTIF' if DEBUG_MODE else 'NON-AKTIF'}")
 # =============================
 print("📦 Memuat AI Models ke Memori (Shared Instance)...")
 model_vehicle = YOLO("yolov8n.pt")
-model_vehicle.to(DEVICE)
 model_plate = YOLO("license_plate_detector.pt")
-model_plate.to(DEVICE)
+
+try:
+    model_vehicle.to(DEVICE)
+    model_plate.to(DEVICE)
+except Exception as e:
+    if "cuda" in DEVICE.lower():
+        print(f"⚠️ Gagal menggunakan GPU ({DEVICE}): {str(e)}")
+        print("🔄 Fallback otomatis ke CPU...")
+        DEVICE = "cpu"
+        model_vehicle.to(DEVICE)
+        model_plate.to(DEVICE)
+    else:
+        raise e
 
 # =============================
 # DATABASE
@@ -72,7 +83,16 @@ PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 # Global OCR stays centralized via queue
 OCR_USE_GPU = os.getenv("OCR_USE_GPU", "False").lower() == "true"
 print(f"🔍 OCR GPU: {'AKTIF' if OCR_USE_GPU else 'NON-AKTIF'}")
-ocr = PaddleOCR(lang="en", use_gpu=OCR_USE_GPU, show_log=False)
+
+try:
+    ocr = PaddleOCR(lang="en", use_gpu=OCR_USE_GPU, show_log=False)
+except Exception as e:
+    if OCR_USE_GPU:
+        print(f"⚠️ PaddleOCR gagal menggunakan GPU: {str(e)}")
+        print("🔄 Fallback OCR ke CPU...")
+        ocr = PaddleOCR(lang="en", use_gpu=False, show_log=False)
+    else:
+        raise e
 
 # =============================
 # ASYNC CAMERA
