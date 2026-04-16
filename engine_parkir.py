@@ -22,10 +22,25 @@ parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking Syst
 args = parser.parse_args()
 
 # DETEKSI DEVICE (GPU/CPU)
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+FORCE_DEVICE = os.getenv("AI_DEVICE", "auto").lower()
+if FORCE_DEVICE == "auto":
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+else:
+    DEVICE = FORCE_DEVICE
+
 DEBUG_MODE = os.getenv("DEBUG_MODE", "False") == "True"
-print(f"🚀 Menggunakan Device: {DEVICE}")
-print(f"🔧 Debug Mode: {'AKTIF' if DEBUG_MODE else 'NON-AKTIF'}")
+print(f"🚀 Konfigurasi Hardware: {FORCE_DEVICE.upper()}")
+print(f"🔧 Menggunakan Device: {DEVICE}")
+print(f"🛠️ Debug Mode: {'AKTIF' if DEBUG_MODE else 'NON-AKTIF'}")
+
+# =============================
+# GLOBAL MODLES (Model Sharing for Scalability)
+# =============================
+print("📦 Memuat AI Models ke Memori (Shared Instance)...")
+model_vehicle = YOLO("yolov8n.pt")
+model_vehicle.to(DEVICE)
+model_plate = YOLO("license_plate_detector.pt")
+model_plate.to(DEVICE)
 
 # =============================
 # DATABASE
@@ -55,7 +70,9 @@ VEHICLE_CLASSES = [2,3,5,7]
 PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 
 # Global OCR stays centralized via queue
-ocr = PaddleOCR(lang="en")
+OCR_USE_GPU = os.getenv("OCR_USE_GPU", "False").lower() == "true"
+print(f"🔍 OCR GPU: {'AKTIF' if OCR_USE_GPU else 'NON-AKTIF'}")
+ocr = PaddleOCR(lang="en", use_gpu=OCR_USE_GPU, show_log=False)
 
 # =============================
 # ASYNC CAMERA
@@ -241,12 +258,9 @@ class CamEngine:
         self.running = True
         self.cap = None
         
-        # Load local AI models for this specific camera (Isolasi Tracker)
-        print(f"📦 Loading AI Models for {self.name}...")
-        self.model_vehicle = YOLO("yolov8n.pt")
-        self.model_vehicle.to(DEVICE)
-        self.model_plate = YOLO("license_plate_detector.pt")
-        self.model_plate.to(DEVICE)
+        # Menggunakan Global Shared Models agar hemat VRAM
+        self.model_vehicle = model_vehicle
+        self.model_plate = model_plate
 
     def stop(self):
         print(f"🛑 Menghentikan Engine: {self.name}")
