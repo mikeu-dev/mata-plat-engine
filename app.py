@@ -95,15 +95,19 @@ def logs():
     return jsonify(data)
 
 def gen_frames(gate_id):
+    last_sent_bytes = None
+    
     while True:
-        # Ambil frame spesifik sesuai ID gate
-        frame = frame_shared.latest_frames.get(gate_id)
-        if frame is not None:
-            # Encode frame sebagai JPEG
-            ret, buffer = cv2.imencode('.jpg', frame)
-            if not ret:
+        # Ambil frame bytes yang sudah di-encode oleh engine
+        frame_bytes = frame_shared.latest_frames.get(gate_id)
+        
+        if frame_bytes is not None:
+            # Hindari mengirim data yang sama jika engine belum update
+            if frame_bytes is last_sent_bytes:
+                time.sleep(0.01)
                 continue
-            frame_bytes = buffer.tobytes()
+                
+            last_sent_bytes = frame_bytes
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         else:

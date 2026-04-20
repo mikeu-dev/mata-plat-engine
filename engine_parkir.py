@@ -133,8 +133,13 @@ class VideoCaptureAsync:
             if ret:
                 self.ret = ret
                 self.frame = frame
+                # Update frame_shared secara real-time di sini (sebelum AI)
+                # Ini memastikan stream dashboard selalu 30 FPS mengikuti kamera
+                from frame_shared import latest_frames
+                # Simpan frame original untuk stream cepat
+                latest_frames[f"raw_{self.gate_id}"] = frame
             else:
-                time.sleep(0.1)
+                time.sleep(0.01)
 
     def read(self):
         return self.ret, self.frame
@@ -154,7 +159,7 @@ from app import app
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
 DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026").strip()
-ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "true") == "True"
+ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
 
 def get_hardware_id():
@@ -298,10 +303,12 @@ class CamEngine:
 
         while self.running:
             ret, frame = self.cap.read()
-            if not ret: continue
+            if not ret or frame is None:
+                time.sleep(0.01)
+                continue
             
-            frame_count += 1
-            if frame_count % FRAME_SKIP != 0: continue
+            # AI always takes the LATEST frame from the async buffer
+            # no more rigid frame skipping to ensure real-time feel
 
             # Gunakan model lokal agar tracker tidak bercampur antar kamera
             results = self.model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
@@ -364,11 +371,19 @@ class CamEngine:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(frame, f"{p['plat']} ({self.name})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-            for tid in list(self.parking_data.keys()):
-                if tid not in current_ids:
-                    del self.parking_data[tid]
-
-            frame_shared.latest_frames[self.gate_id] = frame.copy()
+            # 1. Update annotated frame (resized for dashboard)
+            h, w = frame.shape[:2]
+            preview_w = 800
+            preview_h = int(h * (preview_w / w))
+            preview_frame = cv2.resize(frame, (preview_w, preview_h))
+            
+            # 2. Pre-encode to JPEG (Do it ONCE here, instead of for every client in Flask)
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+            ret, buffer = cv2.imencode('.jpg', preview_frame, encode_param)
+            if ret:
+                # Simpan dalam bentuk bytes agar Flask tinggal kirim (sangat cepat)
+                frame_shared.latest_frames[self.gate_id] = buffer.tobytes()
+            
             if ENABLE_WINDOW:
                 cv2.imshow(f"CAM: {self.name}", cv2.resize(frame, (640, 360)))
                 if cv2.waitKey(1) == 27: break
