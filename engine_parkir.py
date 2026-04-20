@@ -99,8 +99,9 @@ except Exception as e:
 # =============================
 
 class VideoCaptureAsync:
-    def __init__(self, src):
+    def __init__(self, src, gate_id):
         self.src = src
+        self.gate_id = gate_id
         self.cap = None
         self.ret = False
         self.frame = None
@@ -298,7 +299,7 @@ class CamEngine:
 
     def process(self):
         print(f"🚀 Memulai Engine: {self.name} ({self.type})")
-        self.cap = VideoCaptureAsync(self.url)
+        self.cap = VideoCaptureAsync(self.url, self.gate_id)
         frame_count = 0
 
         while self.running:
