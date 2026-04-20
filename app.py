@@ -4,10 +4,12 @@ from flask import Flask, jsonify, redirect, Response
 import mysql.connector
 from dotenv import load_dotenv
 from flasgger import Swagger
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app) # Enable CORS for all routes
 
 # Swagger Configuration
 swagger_config = {
@@ -103,8 +105,9 @@ def gen_frames(gate_id):
         
         if frame_bytes is not None:
             # Hindari mengirim data yang sama jika engine belum update
-            if frame_bytes is last_sent_bytes:
-                time.sleep(0.01)
+            # Gunakan == untuk cek isi bytes (nilai), bukan is (identitas memori)
+            if frame_bytes == last_sent_bytes:
+                time.sleep(0.033) # Jeda sekitar 30 FPS untuk menghemat bandwidth
                 continue
                 
             last_sent_bytes = frame_bytes
