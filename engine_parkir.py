@@ -65,9 +65,9 @@ IDLE_TIMEOUT = 600    # Hapus tracker yang tidak terlihat selama 10 menit
 # =============================
 
 FRAME_SKIP = 2
-STOP_DISTANCE = 3
-MOVE_DISTANCE = 8
-STOP_CONFIRM_FRAMES = 10
+STOP_DISTANCE = 15
+MOVE_DISTANCE = 25
+STOP_CONFIRM_FRAMES = 3
 MOVE_CONFIRM_FRAMES = 4
 VEHICLE_CLASSES = [2,3,5,7]
 PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
@@ -303,6 +303,8 @@ def ocr_worker():
             plate = validate_plate(plate)
             if plate and tid in target_dict:
                 target_dict[tid]["plat"] = plate
+                if DEBUG_MODE:
+                    print(f"✅ [OCR] Berhasil mendeteksi plat: {plate} untuk ID:{tid}")
         except: pass
         ocr_queue.task_done()
 
@@ -401,6 +403,8 @@ class CamEngine:
                             "stop_counter": 0, "move_counter": 0, "park_start": None,
                             "ocr_time": 0, "db_saved": False, "last_seen": time.time()
                         }
+                        if DEBUG_MODE:
+                            print(f"🆕 [Cam:{self.name}] Terdeteksi kendaraan baru (ID:{tid})")
 
                     p = self.parking_data[tid]
                     x1, y1, x2, y2 = box
@@ -420,8 +424,12 @@ class CamEngine:
 
                     if p["stop_counter"] >= STOP_CONFIRM_FRAMES and p["state"] != "stopped":
                         p["state"] = "stopped"; p["park_start"] = time.time()
+                        if DEBUG_MODE:
+                            print(f"🛑 [Cam:{self.name}] Kendaraan ID:{tid} BERHENTI. Memulai pemindaian plat...")
                     if p["move_counter"] >= MOVE_CONFIRM_FRAMES and p["state"] != "moving":
                         p["state"] = "moving"; p["park_start"] = None
+                        if DEBUG_MODE:
+                            print(f"🚗 [Cam:{self.name}] Kendaraan ID:{tid} BERGERAK kembali.")
 
                     is_parking = (p["state"] == "stopped")
 
