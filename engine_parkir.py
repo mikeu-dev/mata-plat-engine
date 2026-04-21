@@ -348,7 +348,12 @@ class CamEngine:
     def process(self):
         print(f"🚀 Memulai Engine: {self.name} ({self.type})")
         self.cap = VideoCaptureAsync(self.url, self.gate_id)
-        frame_count = 0
+        
+        # Load AI Throttle dari .env
+        ai_speed = float(os.getenv("AI_THROTTLE", "0.3"))
+        last_ai_time = 0
+        
+        print(f"⚙️ AI Throttle: {ai_speed}s ({1/ai_speed:.1f} FPS)")
 
         while self.running:
             ret, frame = self.cap.read()
@@ -356,9 +361,14 @@ class CamEngine:
                 time.sleep(0.01)
                 continue
             
-            # AI always takes the LATEST frame from the async buffer
-            # no more rigid frame skipping to ensure real-time feel
-
+            # Throttle AI secara dinamis berdasarkan konfigurasi .env
+            current_time = time.time()
+            if current_time - last_ai_time < ai_speed:
+                time.sleep(0.005) # Jeda sangat kecil untuk efisiensi CPU
+                continue
+                
+            last_ai_time = current_time
+            
             # Gunakan model lokal agar tracker tidak bercampur antar kamera
             results = self.model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
             current_ids = set()
