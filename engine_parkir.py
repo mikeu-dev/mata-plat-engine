@@ -190,9 +190,23 @@ def get_hardware_id():
         return "UNKNOWN"
 
 def fetch_configs():
-    headers = {"x-api-key": DASHBOARD_API_KEY}
     hwid = get_hardware_id()
     params = {"hwid": hwid}
+    
+    # Sign query parameters for GET
+    import urllib.parse
+    payload_str = urllib.parse.urlencode(params)
+    timestamp = int(time.time())
+    
+    headers = {
+        "x-api-key": DASHBOARD_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    if HMAC_SECRET:
+        signature = generate_hmac_signature(payload_str, timestamp, HMAC_SECRET)
+        headers["x-signature"] = signature
+        headers["x-timestamp"] = str(timestamp)
 
     try:
         response = requests.get(DASHBOARD_CONFIG_URL, params=params, headers=headers, timeout=10)
@@ -205,6 +219,8 @@ def fetch_configs():
         elif response.status_code == 202:
             # Pending pairing — admin belum memasangkan HWID ini ke gate
             print(f"⏳ HWID {hwid} terdeteksi oleh Dashboard, menunggu dipasangkan oleh admin...")
+        elif response.status_code == 401 or response.status_code == 403:
+            print(f"❌ Dashboard API Authentication Error {response.status_code}: {response.text[:100]}")
         elif response.status_code == 404:
             # HWID belum dikenali atau endpoint belum di-deploy ulang
             print(f"⚠️ Dashboard mengembalikan 404. Perangkat belum terdaftar atau dashboard perlu rebuild.")
