@@ -136,11 +136,19 @@ class VideoCaptureAsync:
             if ret:
                 self.ret = ret
                 self.frame = frame
-                # Update frame_shared secara real-time di sini (sebelum AI)
-                # Ini memastikan stream dashboard selalu 30 FPS mengikuti kamera
+                
+                # Encode ke JPEG secara real-time di thread kamera (Sangat Cepat)
+                # Ini memastikan monitoring di dashboard tetap lancar (30 FPS)
                 from frame_shared import latest_frames
-                # Simpan frame original untuk stream cepat
-                latest_frames[f"raw_{self.gate_id}"] = frame
+                try:
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 65]
+                    _, buffer = cv2.imencode('.jpg', frame, encode_param)
+                    # Gunakan integer gate_id agar cocok dengan Flask
+                    latest_frames[int(self.gate_id)] = buffer.tobytes()
+                    # Juga simpan raw frame untuk keperluan AI
+                    latest_frames[f"raw_{self.gate_id}"] = frame
+                except Exception as e:
+                    pass
             else:
                 time.sleep(0.01)
 
@@ -412,19 +420,7 @@ class CamEngine:
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     cv2.putText(frame, f"{p['plat']} ({self.name})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-            # 1. Update annotated frame (resized for dashboard)
-            h, w = frame.shape[:2]
-            preview_w = 800
-            preview_h = int(h * (preview_w / w))
-            preview_frame = cv2.resize(frame, (preview_w, preview_h))
-            
-            # 2. Pre-encode to JPEG (Do it ONCE here, instead of for every client in Flask)
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
-            ret, buffer = cv2.imencode('.jpg', preview_frame, encode_param)
-            if ret:
-                # Simpan dalam bentuk bytes agar Flask tinggal kirim (sangat cepat)
-                frame_shared.latest_frames[self.gate_id] = buffer.tobytes()
-            
+            # Monitoring stream is now handled by VideoCaptureAsync thread for better performance
             if ENABLE_WINDOW:
                 cv2.imshow(f"CAM: {self.name}", cv2.resize(frame, (640, 360)))
                 if cv2.waitKey(1) == 27: break
