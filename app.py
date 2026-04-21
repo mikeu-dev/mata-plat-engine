@@ -1,7 +1,8 @@
 import os
 import time
-from flask import Flask, jsonify, redirect, Response
+from flask import Flask, jsonify, redirect, Response, request, abort
 import mysql.connector
+from functools import wraps
 from dotenv import load_dotenv
 from flasgger import Swagger
 from flask_cors import CORS
@@ -11,6 +12,20 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes
 
+# Security Config
+ENGINE_API_KEY = os.getenv("ENGINE_API_KEY", "mata-plat-engine-secret").strip()
+
+def require_api_key(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check header x-api-key or query param api_key
+        api_key = request.headers.get('x-api-key') or request.args.get('api_key')
+        
+        if not api_key or api_key != ENGINE_API_KEY:
+            return jsonify({"error": "Unauthorized. Please provide a valid API Key."}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Swagger Configuration
 swagger_config = {
     "headers": [],
@@ -18,8 +33,8 @@ swagger_config = {
         {
             "endpoint": 'apispec_v1',
             "route": '/api/v1/spec.json',
-            "rule_filter": lambda rule: True,  # all in
-            "model_filter": lambda tag: True,  # all in
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
         }
     ],
     "static_url_path": "/flasgger_static",
@@ -31,13 +46,25 @@ swagger_template = {
     "swagger": "2.0",
     "info": {
         "title": "Mata Plat Engine API",
-        "description": "API dokumentasi untuk engine sistem parkir berbasis AI.",
-        "version": "1.0.0",
+        "description": "API dokumentasi untuk engine sistem parkir berbasis AI. Seluruh endpoint dilindungi oleh x-api-key.",
+        "version": "1.1.0",
         "contact": {
             "name": "mikeu-dev",
             "url": "https://mikeudev.my.id",
         }
     },
+    "securityDefinitions": {
+        "APIKeyHeader": {
+            "type": "apiKey",
+            "name": "x-api-key",
+            "in": "header"
+        }
+    },
+    "security": [
+        {
+            "APIKeyHeader": []
+        }
+    ],
     "schemes": [
         "http",
         "https"
@@ -69,10 +96,13 @@ def index():
     return redirect("/api/v1/docs")
 
 @app.route("/api/logs")
+@require_api_key
 def logs():
     """
-    Get Parking Logs
+    Get Parking Logs (Secured)
     ---
+    security:
+      - APIKeyHeader: []
     responses:
       200:
         description: A list of parking logs from the database
@@ -81,17 +111,17 @@ def logs():
           items:
             type: object
             properties:
-              id:
-                type: integer
-              license_plate:
-                type: string
-              action:
-                type: string
+              id: {type: integer}
+              license_plate: {type: string}
+              action: {type: string}
+              timestamp: {type: string, format: date-time}
+      401:
+        description: Unauthorized
     """
     db = get_db()
     cursor = db.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM logs ORDER BY id DESC")
+    cursor.execute("SELECT * FROM logs ORDER BY id DESC LIMIT 100")
     data = cursor.fetchall()
 
     return jsonify(data)
@@ -105,9 +135,8 @@ def gen_frames(gate_id):
         
         if frame_bytes is not None:
             # Hindari mengirim data yang sama jika engine belum update
-            # Gunakan == untuk cek isi bytes (nilai), bukan is (identitas memori)
             if frame_bytes == last_sent_bytes:
-                time.sleep(0.033) # Jeda sekitar 30 FPS untuk menghemat bandwidth
+                time.sleep(0.033) # Jeda sekitar 30 FPS
                 continue
                 
             last_sent_bytes = frame_bytes
@@ -117,15 +146,29 @@ def gen_frames(gate_id):
             time.sleep(0.1)
 
 @app.route("/video_feed/<int:gate_id>")
+@require_api_key
 def video_feed(gate_id):
     """
-    MJPEG Video Stream per Gate
+    MJPEG Video Stream per Gate (Secured)
     ---
+    parameters:
+      - name: gate_id
+        in: path
+        type: integer
+        required: true
+      - name: api_key
+        in: query
+        type: string
+        description: API Key (untuk akses via browser/img tag)
+    security:
+      - APIKeyHeader: []
     responses:
       200:
-        description: Continuous MJPEG stream of the specific camera frame
+        description: Continuous MJPEG stream
+      401:
+        description: Unauthorized
     """
     return Response(gen_frames(gate_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == "__main__":
-    app.run(debug=os.getenv("FLASK_DEBUG", "True") == "True")
+    app.run(host="0.0.0.0", port=int(os.getenv("STREAM_PORT", 5000)), debug=os.getenv("FLASK_DEBUG", "True") == "True")

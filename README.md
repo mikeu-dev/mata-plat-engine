@@ -79,8 +79,16 @@ streamlit run dashboard_parkir.py
 
 **Opsi 2: Flask Dashboard (Web Sederhana)**
 ```bash
-python app.py
-```
+## 🔒 API Documentation & Security
+Engine ini menyediakan API berbasis Flask untuk kebutuhan monitoring dan log:
+- **Swagger UI**: Akses `http://localhost:5000/api/v1/docs` untuk dokumentasi interaktif.
+- **Security**: Seluruh endpoint dilindungi oleh `x-api-key`. 
+- **Integrasi Dashboard**: Pastikan `ENGINE_API_KEY` di engine sama dengan `PUBLIC_ENGINE_API_KEY` di Dashboard GUI.
+
+### Autentikasi
+Untuk mengakses API via tool seperti Postman atau cURL:
+- Tambahkan header `x-api-key: your-secret-key`
+- Khusus untuk `/video_feed`, Anda bisa menggunakan query parameter: `?api_key=your-secret-key`
 
 ## 📝 Lisensi
 Proyek ini dikembangkan untuk keperluan manajemen parkir berbasis AI.
