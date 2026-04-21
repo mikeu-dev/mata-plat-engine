@@ -1,97 +1,108 @@
-# 🚗 Smart Parking AI Dashboard (Mata Plat Engine)
+# 🚗 Mata Plat Engine - AI Detection Unit
 
-Sistem AI cerdas untuk manajemen parkir otomatis yang mampu mendeteksi kendaraan, mengenali plat nomor (ALPR), dan menghitung biaya parkir secara *real-time* menggunakan video stream (RTSP).
+![Mata Plat Engine Header](https://raw.githubusercontent.com/mikeudev/mata-plat-engine/main/static/engine-banner.png)
 
-## 🌟 Fitur Utama
-- **Deteksi Kendaraan**: Mendeteksi berbagai jenis kendaraan (mobil, motor, bus, truk) menggunakan YOLOv8.
-- **Automatic License Plate Recognition (ALPR)**: Membaca plat nomor kendaraan secara otomatis menggunakan PaddleOCR.
-- **State Machine Detection**: Menentukan apakah kendaraan sedang bergerak atau berhenti (parkir) berdasarkan koordinat posisi.
-- **Sistem Billing Otomatis**: Menghitung lama parkir dan total biaya secara otomatis saat kendaraan keluar.
-- **Dual Dashboard**: Tersedia dashboard berbasis **Flask** (sederhana) dan **Streamlit** (modern dengan visualisasi data).
+> **Mata Plat Engine** adalah unit pemrosesan AI cerdas yang berfungsi sebagai "mata" dari ekosistem Mata Plat. Sistem ini melakukan deteksi kendaraan, pengenalan plat nomor (ALPR), dan analisis aktivitas parkir secara *real-time* dari berbagai sumber video (RTSP/CCTV).
+
+---
+
+## 🌟 Kapabilitas Utama (Core Capabilities)
+
+### 🧠 Advanced AI Detection
+- **Vehicle Detection**: Klasifikasi cerdas untuk berbagai jenis kendaraan (Mobil, Motor, Bus, Truk) menggunakan model YOLOv8 yang telah dioptimasi.
+- **Automatic License Plate Recognition (ALPR)**: Ekstraksi teks plat nomor secara presisi menggunakan PaddleOCR.
+- **Direction & Movement Analysis**: State machine untuk mendeteksi apakah kendaraan masuk, keluar, atau sedang terparkir.
+
+### 🔒 Enterprise Security Implementation
+- **Hardware ID (HWID) Validation**: Memastikan hanya perangkat fisik yang terdaftar yang dapat beroperasi dan mengirim data.
+- **HMAC Webhook Signing**: Setiap event yang dikirim ke dashboard pusat ditandatangani secara kriptografis untuk mencegah *request tampering*.
+- **API Key Protection**: Seluruh endpoint API dilindungi dengan enkripsi x-api-key yang unik untuk setiap node.
+
+### 📡 High-Performance Streaming
+- **MJPEG/RTSP Proxy**: Menyediakan stream video yang efisien untuk dipantau langsung di Command Center.
+- **Real-time Heartbeat**: Mengirim status kesehatan sistem secara berkala ke dashboard pusat untuk monitoring reliabilitas.
+
+---
 
 ## 🛠️ Tech Stack
-- **AI Engine**: Python, OpenCV, YOLOv8 (Ultralytics), PaddleOCR.
-- **Backend**: Flask.
-- **Dashboard**: Streamlit, Pandas, SQLAlchemy.
-- **Database**: MySQL.
-- **Environment**: Python Virtual Environment (venv), Dotenv.
 
-## 🚀 Panduan Instalasi
+- **AI Framework**: Python 3.10+, OpenCV, Ultralytics YOLOv8, PaddleOCR.
+- **Backend API**: Flask (Lightweight & Fast).
+- **Security**: HMAC-SHA256, HWID Binding.
+- **Monitoring**: Streamlit (Internal Debugging Dashboard).
+- **Environment**: Python Virtual Environment (venv).
 
-### 1. Prasyarat
-- Python 3.8 ke atas.
-- MySQL Server (misal: XAMPP).
-- NVIDIA GPU (disarankan untuk performa maksimal dengan CUDA).
+---
 
-### 2. Kloning Repositori
+## 🚀 Panduan Instalasi & Setup
+
+### 1. Prasyarat Sistem
+- Python 3.8 - 3.11
+- NVIDIA GPU dengan CUDA (Sangat disarankan untuk produksi)
+- Library Sistem: `libgl1-mesa-glx`, `libglib2.0-0`
+
+### 2. Persiapan Environment
 ```bash
+# Clone repositori
 git clone https://github.com/username/mata-plat-engine.git
 cd mata-plat-engine
-```
 
-### 3. Setup Virtual Environment
-```bash
+# Setup Virtual Environment
 python3 -m venv venv
-source venv/bin/activate  # Untuk Linux/Mac
-# venv\Scripts\activate   # Untuk Windows
+source venv/bin/activate
 ```
 
-### 4. Instalasi Dependensi
+### 3. Instalasi Dependensi
 ```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 5. Konfigurasi Database
-Buat database di MySQL dengan nama `parking_db` dan jalankan perintah SQL berikut:
-```sql
-CREATE TABLE IF NOT EXISTS logs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    plate VARCHAR(20),
-    time_in DATETIME DEFAULT CURRENT_TIMESTAMP,
-    time_out DATETIME,
-    total_bill INT DEFAULT 0,
-    vehicle_type VARCHAR(50)
-);
-```
-
-### 6. Konfigurasi Environment (.env)
-Salin file template `.env.example` menjadi `.env` dan sesuaikan nilainya:
+### 4. Konfigurasi Environment (.env)
+Salin template dan sesuaikan variabel kunci:
 ```bash
 cp .env.example .env
 ```
-Sesuaikan `DB_PASS` dan `RTSP_URL` (URL CCTV Anda) di dalam file `.env`.
+Variabel krusial yang harus diatur:
+- `MAIN_DASHBOARD_URL`: URL pusat dashboard Mata Plat.
+- `ENGINE_API_KEY`: Key unik untuk otentikasi engine.
+- `RTSP_URL`: Sumber stream kamera CCTV.
+
+---
 
 ## 🖥️ Cara Menjalankan
 
-### Menjalankan Engine Deteksi
-Engine ini wajib dijalankan agar sistem dapat memproses video dan menyimpan data ke database.
+### Mode Produksi (Background Service)
+Disarankan menggunakan PM2 untuk memastikan engine tetap berjalan setelah restart:
 ```bash
-python engine_parkir.py
+pm2 start engine_parkir.py --name "mata-plat-engine" --interpreter ./venv/bin/python
 ```
 
-### Menjalankan Dashboard
-Anda bisa memilih salah satu dashboard:
-
-**Opsi 1: Streamlit Dashboard (Visualisasi Lengkap)**
+### Mode Pengembangan & Debugging
 ```bash
+# Menjalankan AI Engine Utama
+python engine_parkir.py
+
+# Menjalankan Dashboard Monitor Lokal (Streamlit)
 streamlit run dashboard_parkir.py
 ```
 
-**Opsi 2: Flask Dashboard (Web Sederhana)**
-```bash
-## 🔒 API Documentation & Security
-Engine ini menyediakan API berbasis Flask untuk kebutuhan monitoring dan log:
-- **Swagger UI**: Akses `http://localhost:5000/api/v1/docs` untuk dokumentasi interaktif.
-- **Security**: Seluruh endpoint dilindungi oleh `x-api-key`. 
-- **Integrasi Dashboard**: Pastikan `ENGINE_API_KEY` di engine sama dengan `PUBLIC_ENGINE_API_KEY` di Dashboard GUI.
+---
 
-### Autentikasi
-Untuk mengakses API via tool seperti Postman atau cURL:
-- Tambahkan header `x-api-key: your-secret-key`
-- Khusus untuk `/video_feed`, Anda bisa menggunakan query parameter: `?api_key=your-secret-key`
+## 🛡️ Dokumentasi API & Integrasi
 
-## 📝 Lisensi
-Proyek ini dikembangkan untuk keperluan manajemen parkir berbasis AI.
+Setiap engine menyediakan endpoint lokal untuk monitoring:
+- **Health Check**: `GET /api/v1/health`
+- **Video Feed**: `GET /video_feed?api_key=SECRET`
+- **Configuration**: `POST /api/v1/config` (Dilindungi HMAC)
 
 ---
-**Catatan**: Untuk menjalankan engine pada mode CPU (jika tidak ada GPU), ubah baris `.to("cuda")` menjadi `.to("cpu")` pada file `engine_parkir.py`.
+
+## 📝 Troubleshooting
+
+- **GPU Tidak Terdeteksi**: Pastikan `torch.cuda.is_available()` bernilai `True`. Jika menggunakan CPU, pastikan parameter `.to("cpu")` sudah diset di config.
+- **Gagal Validasi HWID**: Pastikan file `.hwid` di direktori root sesuai dengan yang terdaftar di Dashboard Pusat.
+
+---
+
+Dibuat dengan ❤️ oleh **Tim Mata Plat**. 🚀
