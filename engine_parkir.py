@@ -11,7 +11,6 @@ import argparse
 from queue import Queue
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
-import mysql.connector
 from dotenv import load_dotenv
 import torch
 import hashlib
@@ -56,19 +55,10 @@ except Exception as e:
         raise e
 
 # =============================
-# DATABASE
-# =============================
-
-db = mysql.connector.connect(
-    host=os.getenv("DB_HOST", "localhost"),
-    user=os.getenv("DB_USER", "root"),
-    password=os.getenv("DB_PASS", ""),
-    database=os.getenv("DB_NAME", "parking_db")
-)
-
-cursor = db.cursor()
 
 BIAYA_PER_JAM = int(os.getenv("BIAYA_PER_JAM", 5000))
+CLEANUP_INTERVAL = 300 # Bersihkan data setiap 5 menit
+IDLE_TIMEOUT = 600    # Hapus tracker yang tidak terlihat selama 10 menit
 
 # =============================
 # KONFIGURASI
@@ -107,7 +97,7 @@ class VideoCaptureAsync:
         self.cap = None
         self.ret = False
         self.frame = None
-        self.running = True
+        self.stop_event = threading.Event()
 
         max_retries = 5
         for i in range(max_retries):
@@ -130,7 +120,7 @@ class VideoCaptureAsync:
         threading.Thread(target=self.update, daemon=True).start()
 
     def update(self):
-        while self.running:
+        while not self.stop_event.is_set():
             if self.cap is None: break
             ret, frame = self.cap.read()
             if ret:
@@ -139,14 +129,15 @@ class VideoCaptureAsync:
                 
                 # Encode ke JPEG secara real-time di thread kamera (Sangat Cepat)
                 # Ini memastikan monitoring di dashboard tetap lancar (30 FPS)
-                from frame_shared import latest_frames
+                from frame_shared import latest_frames, frame_timestamps
                 try:
                     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 65]
                     _, buffer = cv2.imencode('.jpg', frame, encode_param)
                     # Gunakan integer gate_id agar cocok dengan Flask
-                    latest_frames[int(self.gate_id)] = buffer.tobytes()
-                    # Juga simpan raw frame untuk keperluan AI
-                    latest_frames[f"raw_{self.gate_id}"] = frame
+                    gid_int = int(self.gate_id)
+                    latest_frames[gid_int] = buffer.tobytes()
+                    # Simpan timestamp untuk efisiensi di Flask
+                    frame_timestamps[gid_int] = time.time()
                 except Exception as e:
                     pass
             else:
@@ -156,7 +147,7 @@ class VideoCaptureAsync:
         return self.ret, self.frame
 
     def stop(self):
-        self.running = False
+        self.stop_event.set()
         if self.cap:
             self.cap.release()
 
@@ -331,6 +322,7 @@ class CamEngine:
         self.parking_data = {}
         self.running = True
         self.cap = None
+        self.last_cleanup_time = time.time()
         
         # Menggunakan Global Shared Models agar hemat VRAM
         self.model_vehicle = model_vehicle
@@ -344,6 +336,24 @@ class CamEngine:
         if ENABLE_WINDOW:
             try: cv2.destroyWindow(f"CAM: {self.name}")
             except: pass
+
+    def cleanup_old_data(self):
+        current_time = time.time()
+        if current_time - self.last_cleanup_time < CLEANUP_INTERVAL:
+            return
+            
+        tids_to_remove = []
+        for tid, data in self.parking_data.items():
+            if current_time - data.get("last_seen", 0) > IDLE_TIMEOUT:
+                tids_to_remove.append(tid)
+        
+        for tid in tids_to_remove:
+            del self.parking_data[tid]
+            
+        if tids_to_remove and DEBUG_MODE:
+            print(f"🧹 [CamEngine:{self.name}] Membersihkan {len(tids_to_remove)} Tracker ID lama.")
+            
+        self.last_cleanup_time = current_time
 
     def process(self):
         print(f"🚀 Memulai Engine: {self.name} ({self.type})")
@@ -369,6 +379,9 @@ class CamEngine:
                 
             last_ai_time = current_time
             
+            # Panggil pembersihan data secara berkala
+            self.cleanup_old_data()
+            
             # Gunakan model lokal agar tracker tidak bercampur antar kamera
             results = self.model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
             current_ids = set()
@@ -386,13 +399,14 @@ class CamEngine:
                         self.parking_data[tid] = {
                             "plat": "Scanning...", "positions": [], "state": "moving",
                             "stop_counter": 0, "move_counter": 0, "park_start": None,
-                            "ocr_time": 0, "db_saved": False
+                            "ocr_time": 0, "db_saved": False, "last_seen": time.time()
                         }
 
                     p = self.parking_data[tid]
                     x1, y1, x2, y2 = box
                     center = (int((x1+x2)/2), int((y1+y2)/2))
                     p["positions"].append(center)
+                    p["last_seen"] = time.time()
                     if len(p["positions"]) > 5: p["positions"].pop(0)
 
                     dist = 0

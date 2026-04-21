@@ -127,23 +127,26 @@ def logs():
     return jsonify(data)
 
 def gen_frames(gate_id):
-    last_sent_bytes = None
+    last_timestamp = 0
+    gate_id = int(gate_id)
     
     while True:
-        # Ambil frame bytes yang sudah di-encode oleh engine
-        frame_bytes = frame_shared.latest_frames.get(gate_id)
+        # Ambil timestamp terbaru dari engine
+        current_timestamp = frame_shared.frame_timestamps.get(gate_id, 0)
         
-        if frame_bytes is not None:
-            # Hindari mengirim data yang sama jika engine belum update
-            if frame_bytes == last_sent_bytes:
-                time.sleep(0.033) # Jeda sekitar 30 FPS
-                continue
-                
-            last_sent_bytes = frame_bytes
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        if current_timestamp > last_timestamp:
+            # Hanya ambil bytes jika timestamp berubah (lebih efisien CPU)
+            frame_bytes = frame_shared.latest_frames.get(gate_id)
+            
+            if frame_bytes is not None:
+                last_timestamp = current_timestamp
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            else:
+                time.sleep(0.01)
         else:
-            time.sleep(0.1)
+            # Jeda kecil jika belum ada frame baru (sekitar 60 FPS check)
+            time.sleep(0.016)
 
 @app.route("/video_feed/<int:gate_id>")
 @require_api_key
