@@ -14,6 +14,8 @@ from paddleocr import PaddleOCR
 import mysql.connector
 from dotenv import load_dotenv
 import torch
+import hashlib
+import hmac
 
 load_dotenv()
 
@@ -160,8 +162,14 @@ from app import app
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:5173/api/v1/event")
 DASHBOARD_CONFIG_URL = os.getenv("DASHBOARD_CONFIG_URL", "http://localhost:5173/api/v1/config")
 DASHBOARD_API_KEY = os.getenv("DASHBOARD_API_KEY", "mata-plat-secret-api-key-2026").strip()
+HMAC_SECRET = os.getenv("HMAC_SECRET", "").strip()
 ENABLE_WINDOW = os.getenv("ENABLE_WINDOW", "False") == "True"
 STREAM_PORT = int(os.getenv("STREAM_PORT", 5000))
+
+def generate_hmac_signature(payload_str, timestamp, secret):
+    message = f"{payload_str}.{timestamp}".encode('utf-8')
+    signature = hmac.new(secret.encode('utf-8'), message, hashlib.sha256).hexdigest()
+    return signature
 
 def get_hardware_id():
     hwid_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hwid")
@@ -213,16 +221,32 @@ def fetch_configs():
 
 def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
     try:
-        headers = {"x-api-key": DASHBOARD_API_KEY}
         data = {
             "plate": plate,
             "action": action.lower(),
             "gate_id": gate_id,
             "vehicle_type_id": v_type_id
         }
-        requests.post(DASHBOARD_API_URL, json=data, headers=headers, timeout=5)
-        print(f"📡 Sync {action}: [{plate}] @ Camera {gate_id}")
-    except: pass
+        
+        # Use separators to ensure consistent JSON formatting for HMAC
+        payload_str = json.dumps(data, separators=(',', ':'))
+        timestamp = int(time.time())
+        
+        headers = {
+            "x-api-key": DASHBOARD_API_KEY,
+            "Content-Type": "application/json"
+        }
+
+        if HMAC_SECRET:
+            signature = generate_hmac_signature(payload_str, timestamp, HMAC_SECRET)
+            headers["x-signature"] = signature
+            headers["x-timestamp"] = str(timestamp)
+            
+        requests.post(DASHBOARD_API_URL, data=payload_str, headers=headers, timeout=5)
+        print(f"📡 Sync {action}: [{plate}] @ Camera {gate_id} (Secured with HMAC)")
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"❌ Failed to sync: {str(e)}")
 
 # =============================
 # OCR SYSTEM
