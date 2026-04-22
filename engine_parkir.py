@@ -661,7 +661,10 @@ class CamEngine:
         self.name = config['name']
         self.url = config['cameraUrl']
         self.type = str(config.get('deviceType', config.get('type', ''))).strip()
-        self.roi_polygon = config.get('roiPolygon') # Tambahkan ini
+        self.roi_polygon = config.get('roiPolygon')
+        self.last_snapshot_time = 0
+        self.snapshot_dir = os.path.join("..", "mata-plat", "static", "uploads", "snapshots")
+        os.makedirs(self.snapshot_dir, exist_ok=True)
         print(f"DEBUG: [Cam:{self.name}] Detected Type: '{self.type}'")
         self.parking_data = {}
         self.running = True
@@ -727,6 +730,15 @@ class CamEngine:
             if not ret or frame is None:
                 time.sleep(0.01)
                 continue
+            
+            # --- SNAPSHOT UNTUK ROI EDITOR ---
+            now = time.time()
+            if now - self.last_snapshot_time > 5:
+                try:
+                    snapshot_path = os.path.join(self.snapshot_dir, f"{self.gate_id}.jpg")
+                    cv2.imwrite(snapshot_path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                    self.last_snapshot_time = now
+                except: pass
             
             # Throttle AI secara dinamis berdasarkan konfigurasi .env
             current_time = time.time()
