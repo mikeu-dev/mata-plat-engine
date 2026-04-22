@@ -141,7 +141,7 @@ class VideoCaptureAsync:
             self._init_rtsp()
 
     def _init_hls(self):
-        """Inisialisasi HLS stream via ffmpeg subprocess."""
+        """Inisialisasi HLS stream via Python fetcher + ffmpeg pipe."""
         max_retries = 5
         for i in range(max_retries):
             if self.stop_event.is_set():
@@ -151,59 +151,39 @@ class VideoCaptureAsync:
             print(f"📡 Mencoba menghubungkan ke HLS stream ({i+1}/{max_retries})...")
             self._kill_ffmpeg()
 
-            # Probe resolusi dulu
-            if self._frame_width == 0:
-                probe_cmd = [
-                    'ffprobe', '-v', 'error',
-                    '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height',
-                    '-of', 'csv=p=0:s=x',
-                    self.src
-                ]
-                try:
-                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=15)
-                    if result.returncode == 0 and 'x' in result.stdout.strip():
-                        parts = result.stdout.strip().split('x')
-                        self._frame_width = int(parts[0])
-                        self._frame_height = int(parts[1])
-                        print(f"📐 Resolusi stream: {self._frame_width}x{self._frame_height}")
-                except Exception:
-                    pass
-
-            # Fallback resolusi jika probe gagal
-            if self._frame_width == 0:
-                self._frame_width = 960
-                self._frame_height = 540
-                print(f"📐 Menggunakan resolusi default: {self._frame_width}x{self._frame_height}")
-
-            # Start ffmpeg subprocess
+            # Start ffmpeg subprocess dengan input dari PIPE (stdin)
+            # Kita set resolusi manual 960x540 untuk HLS Purwakarta
+            self._frame_width = 960
+            self._frame_height = 540
+            
             ffmpeg_cmd = [
                 'ffmpeg',
-                '-reconnect', '1',
-                '-reconnect_streamed', '1',
-                '-reconnect_delay_max', '5',
-                '-i', self.src,
+                '-i', 'pipe:0',           # Ambil input dari stdin
                 '-f', 'rawvideo',
                 '-pix_fmt', 'bgr24',
                 '-vsync', '0',
-                '-an',
-                '-sn',
+                '-an', '-sn',
                 '-v', 'error',
-                'pipe:1'
+                'pipe:1'                  # Output frame ke stdout
             ]
             try:
                 self._ffmpeg_proc = subprocess.Popen(
                     ffmpeg_cmd,
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
-                    bufsize=self._frame_width * self._frame_height * 3 * 2
+                    bufsize=self._frame_width * self._frame_height * 3 * 5
                 )
             except FileNotFoundError:
-                print("❌ ffmpeg tidak ditemukan. Install: sudo apt install ffmpeg")
+                print("❌ ffmpeg tidak ditemukan.")
                 return
 
-            # Tunggu frame pertama (interruptible)
-            for _ in range(10):
+            # Test koneksi dengan mencoba fetch segment pertama
+            self.connected = True
+            threading.Thread(target=self.hls_fetcher_loop, daemon=True).start()
+            
+            # Tunggu frame pertama
+            for _ in range(20):
                 if self.stop_event.is_set():
                     self._safe_release()
                     return
@@ -214,24 +194,71 @@ class VideoCaptureAsync:
                     self.frame = frame
                     print("✅ Koneksi HLS stream stabil.")
                     break
-
+            
             if self.ret:
                 break
             else:
                 print(f"⚠️ Percobaan {i+1} gagal membaca frame dari HLS.")
+                self.connected = False
                 self._kill_ffmpeg()
-                for _ in range(2):
-                    if self.stop_event.is_set():
-                        self._safe_release()
-                        return
-                    time.sleep(0.5)
 
-        if not self.stop_event.is_set() and self.ret:
-            self.connected = True
+        if self.ret:
             threading.Thread(target=self.update, daemon=True).start()
-        elif not self.stop_event.is_set():
-            print(f"❌ Gagal terhubung ke HLS stream setelah {max_retries} percobaan.")
+        else:
+            print(f"❌ Gagal terhubung ke HLS stream.")
             self._safe_release()
+
+    def hls_fetcher_loop(self):
+        """Looping untuk mendownload segment HLS dan mem-pipe ke ffmpeg."""
+        import requests
+        import re
+        
+        base_url = self.src.split('?')[0].rsplit('/', 1)[0]
+        params = self.src.split('?')[1] if '?' in self.src else ""
+        key = ""
+        if "key=" in params:
+            key = params.split('key=')[1].split('&')[0]
+
+        last_segment = None
+        
+        while self.connected and not self.stop_event.is_set():
+            try:
+                # 1. Download Playlist
+                res = requests.get(self.src, timeout=5)
+                if res.status_code != 200:
+                    time.sleep(2)
+                    continue
+                
+                # 2. Cari segment terbaru
+                segments = re.findall(r'index\d+\.ts', res.text)
+                if not segments:
+                    time.sleep(1)
+                    continue
+                
+                # Kita ambil segment terakhir
+                newest_segment = segments[-1]
+                
+                if newest_segment != last_segment:
+                    # 3. Download Segment dengan Key
+                    seg_url = f"{base_url}/{newest_segment}?key={key}"
+                    seg_res = requests.get(seg_url, timeout=5)
+                    
+                    if seg_res.status_code == 200:
+                        # 4. Pipe ke ffmpeg stdin
+                        if self._ffmpeg_proc and self._ffmpeg_proc.stdin:
+                            try:
+                                self._ffmpeg_proc.stdin.write(seg_res.content)
+                                self._ffmpeg_proc.stdin.flush()
+                            except BrokenPipeError:
+                                break
+                    
+                    last_segment = newest_segment
+                
+                time.sleep(1) # HLS Purwakarta punya segment 2 detik
+                
+            except Exception as e:
+                if DEBUG_MODE: print(f"⚠️ HLS Fetcher Error: {e}")
+                time.sleep(2)
 
     def _init_rtsp(self):
         """Inisialisasi RTSP stream via cv2.VideoCapture."""
