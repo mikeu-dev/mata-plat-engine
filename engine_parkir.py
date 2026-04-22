@@ -648,7 +648,8 @@ class CamEngine:
         self.gate_id = config['id']
         self.name = config['name']
         self.url = config['cameraUrl']
-        self.type = config['type']
+        self.type = str(config.get('deviceType', config.get('type', ''))).strip()
+        print(f"DEBUG: [Cam:{self.name}] Detected Type: '{self.type}'")
         self.parking_data = {}
         self.running = True
         self._stop_event = threading.Event()  # Shared stop signal
@@ -789,7 +790,11 @@ class CamEngine:
                         # Jika plat belum ketemu, gunakan placeholder UNKNOWN dengan ID tracker
                         display_plate = p["plat"] if p["plat"] != "Scanning..." else f"TANPA-PLAT-{tid}"
                         
-                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring', 'area_monitoring'] else 'exit'
+                        # Tentukan action, semua monitoring dianggap entry
+                        cam_type_lower = self.type.lower()
+                        is_monitoring = "monitoring" in cam_type_lower or "entry" in cam_type_lower
+                        action = 'entry' if is_monitoring else 'exit'
+                        
                         sync_to_dashboard(display_plate, action, self.gate_id)
                         
                         # Jika sudah ada plat asli, tandai sudah tersimpan permanen
@@ -803,7 +808,10 @@ class CamEngine:
 
                     # UPDATE DATA: Jika sebelumnya kirim placeholder, dan sekarang plat asli sudah ketemu
                     if p.get("placeholder_sent") and p["plat"] != "Scanning...":
-                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring', 'area_monitoring'] else 'exit'
+                        cam_type_lower = self.type.lower()
+                        is_monitoring = "monitoring" in cam_type_lower or "entry" in cam_type_lower
+                        action = 'entry' if is_monitoring else 'exit'
+                        
                         print(f"🔄 [Cam:{self.name}] Mengupdate data placeholder ID:{tid} dengan plat asli: {p['plat']}")
                         sync_to_dashboard(p["plat"], action, self.gate_id)
                         p["placeholder_sent"] = False
