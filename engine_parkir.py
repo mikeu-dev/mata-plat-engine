@@ -776,22 +776,37 @@ class CamEngine:
 
                     if is_parking and time.time() - p["ocr_time"] > 2:
                         roi = frame[y1:y2, x1:x2]
-                        plate_res = self.model_plate.predict(roi, conf=0.35, imgsz=320, verbose=False) # conf diturunkan 0.45 -> 0.35
+                        plate_res = self.model_plate.predict(roi, conf=0.35, imgsz=320, verbose=False)
                         if len(plate_res[0].boxes) > 0:
                             pb = plate_res[0].boxes.xyxy[0].cpu().numpy().astype(int)
                             crop = roi[pb[1]:pb[3], pb[0]:pb[2]]
                             if crop.size > 0:
                                 ocr_queue.put((tid, crop, self.parking_data))
                                 p["ocr_time"] = time.time()
-                        else:
-                            if DEBUG_MODE and time.time() - p.get("last_ocr_fail", 0) > 10:
-                                print(f"🔍 [Cam:{self.name}] AI belum menemukan area plat pada ID:{tid}")
-                                p["last_ocr_fail"] = time.time()
 
-                    if is_parking and p["plat"] != "Scanning..." and not p["db_saved"]:
-                        # Untuk monitoring, kita anggap sebagai 'entry' agar data masuk ke laporan parkir (uji coba)
+                    # KIRIM DATA: Biarkan data masuk dulu meskipun plat belum terbaca
+                    if is_parking and not p["db_saved"]:
+                        # Jika plat belum ketemu, gunakan placeholder UNKNOWN dengan ID tracker
+                        display_plate = p["plat"] if p["plat"] != "Scanning..." else f"TANPA-PLAT-{tid}"
+                        
                         action = 'entry' if self.type in ['entry_gate', 'street_monitoring'] else 'exit'
+                        sync_to_dashboard(display_plate, action, self.gate_id)
+                        
+                        # Jika sudah ada plat asli, tandai sudah tersimpan permanen
+                        # Jika masih placeholder, biarkan db_saved=False agar bisa diupdate nanti saat plat ketemu
+                        if p["plat"] != "Scanning...":
+                            p["db_saved"] = True
+                            p["placeholder_sent"] = False
+                        else:
+                            p["placeholder_sent"] = True
+                            p["db_saved"] = True # Set True sementara agar tidak spam tiap frame
+
+                    # UPDATE DATA: Jika sebelumnya kirim placeholder, dan sekarang plat asli sudah ketemu
+                    if p.get("placeholder_sent") and p["plat"] != "Scanning...":
+                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring'] else 'exit'
+                        print(f"🔄 [Cam:{self.name}] Mengupdate data placeholder ID:{tid} dengan plat asli: {p['plat']}")
                         sync_to_dashboard(p["plat"], action, self.gate_id)
+                        p["placeholder_sent"] = False
                         p["db_saved"] = True
 
                     color = (0, 255, 0) if is_parking else (0, 165, 255)
