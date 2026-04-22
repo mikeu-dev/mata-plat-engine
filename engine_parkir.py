@@ -87,10 +87,10 @@ IDLE_TIMEOUT = 600    # Hapus tracker yang tidak terlihat selama 10 menit
 # =============================
 
 FRAME_SKIP = 2
-STOP_DISTANCE = 15
-MOVE_DISTANCE = 25
-STOP_CONFIRM_FRAMES = 3
-MOVE_CONFIRM_FRAMES = 4
+STOP_DISTANCE = 25
+MOVE_DISTANCE = 35
+STOP_CONFIRM_FRAMES = 2
+MOVE_CONFIRM_FRAMES = 5
 VEHICLE_CLASSES = [2,3,5,7]
 PLATE_REGEX = r'^[A-Z]{1,2}[0-9]{1,4}[A-Z]{1,3}$'
 
@@ -776,16 +776,21 @@ class CamEngine:
 
                     if is_parking and time.time() - p["ocr_time"] > 2:
                         roi = frame[y1:y2, x1:x2]
-                        plate_res = self.model_plate.predict(roi, conf=0.45, imgsz=320, verbose=False)
+                        plate_res = self.model_plate.predict(roi, conf=0.35, imgsz=320, verbose=False) # conf diturunkan 0.45 -> 0.35
                         if len(plate_res[0].boxes) > 0:
                             pb = plate_res[0].boxes.xyxy[0].cpu().numpy().astype(int)
                             crop = roi[pb[1]:pb[3], pb[0]:pb[2]]
                             if crop.size > 0:
                                 ocr_queue.put((tid, crop, self.parking_data))
                                 p["ocr_time"] = time.time()
+                        else:
+                            if DEBUG_MODE and time.time() - p.get("last_ocr_fail", 0) > 10:
+                                print(f"🔍 [Cam:{self.name}] AI belum menemukan area plat pada ID:{tid}")
+                                p["last_ocr_fail"] = time.time()
 
                     if is_parking and p["plat"] != "Scanning..." and not p["db_saved"]:
-                        action = 'entry' if self.type == 'entry_gate' else 'exit' if self.type == 'exit_gate' else 'monitoring'
+                        # Untuk monitoring, kita anggap sebagai 'entry' agar data masuk ke laporan parkir (uji coba)
+                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring'] else 'exit'
                         sync_to_dashboard(p["plat"], action, self.gate_id)
                         p["db_saved"] = True
 
