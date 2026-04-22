@@ -113,40 +113,83 @@ except Exception as e:
 # =============================
 
 class VideoCaptureAsync:
-    def __init__(self, src, gate_id):
+    def __init__(self, src, gate_id, stop_event=None):
         self.src = src
         self.gate_id = gate_id
         self.cap = None
         self.ret = False
         self.frame = None
-        self.stop_event = threading.Event()
+        self.stop_event = stop_event or threading.Event()
+        self.connected = False
 
         max_retries = 5
         for i in range(max_retries):
+            # Cek apakah engine sudah diminta berhenti sebelum retry
+            if self.stop_event.is_set():
+                self._safe_release()
+                return
+
             print(f"📡 Mencoba menghubungkan ke kamera ({i+1}/{max_retries})...")
             if self.cap is not None:
                 self.cap.release()
+                self.cap = None
             
             self.cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)
             self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
-            time.sleep(2)
+
+            # Interruptible sleep: cek stop_event setiap 0.5 detik
+            for _ in range(4):
+                if self.stop_event.is_set():
+                    self._safe_release()
+                    return
+                time.sleep(0.5)
             
+            # Cek lagi sebelum blocking read
+            if self.stop_event.is_set():
+                self._safe_release()
+                return
+
             self.ret, self.frame = self.cap.read()
             if self.ret:
                 print("✅ Koneksi kamera stabil.")
                 break
             else:
                 print(f"⚠️ Percobaan {i+1} gagal membaca frame.")
-                time.sleep(1)
+                # Interruptible sleep antara retry
+                for _ in range(2):
+                    if self.stop_event.is_set():
+                        self._safe_release()
+                        return
+                    time.sleep(0.5)
 
-        threading.Thread(target=self.update, daemon=True).start()
+        # Hanya start update thread jika koneksi berhasil dan belum di-stop
+        if not self.stop_event.is_set() and self.ret:
+            self.connected = True
+            threading.Thread(target=self.update, daemon=True).start()
+        elif not self.stop_event.is_set():
+            # Semua retry gagal tapi bukan karena di-stop
+            print(f"❌ Gagal terhubung ke kamera setelah {max_retries} percobaan.")
+            self._safe_release()
+
+    def _safe_release(self):
+        """Release capture dari thread yang sama yang memilikinya."""
+        if self.cap is not None:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
 
     def update(self):
         while not self.stop_event.is_set():
-            if self.cap is None: break
-            ret, frame = self.cap.read()
+            if self.cap is None:
+                break
+            try:
+                ret, frame = self.cap.read()
+            except Exception:
+                break
             if ret:
                 self.ret = ret
                 self.frame = frame
@@ -162,18 +205,21 @@ class VideoCaptureAsync:
                     latest_frames[gid_int] = buffer.tobytes()
                     # Simpan timestamp untuk efisiensi di Flask
                     frame_timestamps[gid_int] = time.time()
-                except Exception as e:
+                except Exception:
                     pass
             else:
                 time.sleep(0.01)
+
+        # Release di thread yang sama (update thread) agar thread-safe
+        self._safe_release()
 
     def read(self):
         return self.ret, self.frame
 
     def stop(self):
+        """Signal stop — TIDAK release cap di sini untuk menghindari race condition.
+        Release dilakukan oleh update thread atau constructor yang memiliki cap."""
         self.stop_event.set()
-        if self.cap:
-            self.cap.release()
 
 import frame_shared
 from app import app
@@ -399,6 +445,7 @@ class CamEngine:
         self.type = config['type']
         self.parking_data = {}
         self.running = True
+        self._stop_event = threading.Event()  # Shared stop signal
         self.cap = None
         self.last_cleanup_time = time.time()
         
@@ -409,8 +456,9 @@ class CamEngine:
     def stop(self):
         print(f"🛑 Menghentikan Engine: {self.name}")
         self.running = False
+        self._stop_event.set()  # Signal semua komponen untuk berhenti
         if self.cap:
-            self.cap.stop()
+            self.cap.stop()  # Hanya set stop_event, tidak release langsung
         if ENABLE_WINDOW:
             try: cv2.destroyWindow(f"CAM: {self.name}")
             except: pass
@@ -435,7 +483,15 @@ class CamEngine:
 
     def process(self):
         print(f"🚀 Memulai Engine: {self.name} ({self.type})")
-        self.cap = VideoCaptureAsync(self.url, self.gate_id)
+        self.cap = VideoCaptureAsync(self.url, self.gate_id, stop_event=self._stop_event)
+        
+        # Jika koneksi dibatalkan atau gagal total
+        if not self.cap.connected:
+            if self._stop_event.is_set():
+                print(f"⚠️ Engine {self.name} dibatalkan saat menghubungkan kamera.")
+            else:
+                print(f"❌ Engine {self.name} gagal terhubung ke kamera.")
+            return
         
         # Load AI Throttle dari .env
         ai_speed = float(os.getenv("AI_THROTTLE", "0.3"))
@@ -444,7 +500,10 @@ class CamEngine:
         print(f"⚙️ AI Throttle: {ai_speed}s ({1/ai_speed:.1f} FPS)")
 
         while self.running:
-            ret, frame = self.cap.read()
+            try:
+                ret, frame = self.cap.read()
+            except Exception:
+                break
             if not ret or frame is None:
                 time.sleep(0.01)
                 continue
