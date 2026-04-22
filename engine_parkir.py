@@ -61,7 +61,7 @@ CLEANUP_INTERVAL = 300 # Bersihkan data setiap 5 menit
 IDLE_TIMEOUT = 600    # Hapus tracker yang tidak terlihat selama 10 menit
 
 # =============================
-# KONFIGURASI
+# KONFIGURASI (Default — dapat di-override dari Dashboard)
 # =============================
 
 FRAME_SKIP = 2
@@ -189,6 +189,7 @@ def get_hardware_id():
         return "UNKNOWN"
 
 def fetch_configs():
+    """Fetch configuration from Dashboard API. Returns full response dict or None."""
     hwid = get_hardware_id()
     params = {"hwid": hwid}
     
@@ -212,7 +213,7 @@ def fetch_configs():
         if response.status_code == 200:
             data = response.json()
             if data.get('success'):
-                return data.get('cameras')
+                return data  # Return full response (cameras + engineConfig)
             else:
                 print(f"⚠️ Dashboard API mengembalikan success: false: {data.get('message', 'No message')}")
         elif response.status_code == 202:
@@ -233,6 +234,57 @@ def fetch_configs():
         print(f"❌ Error saat mengambil konfigurasi: {str(e)}")
     
     return None
+
+def apply_engine_config(engine_config):
+    """Apply engine configuration received from Dashboard to global variables."""
+    global FRAME_SKIP, STOP_DISTANCE, MOVE_DISTANCE
+    global STOP_CONFIRM_FRAMES, MOVE_CONFIRM_FRAMES
+    global VEHICLE_CLASSES, PLATE_REGEX
+
+    if not engine_config:
+        return
+
+    changed = []
+
+    new_val = engine_config.get('frameSkip')
+    if new_val is not None and new_val != FRAME_SKIP:
+        changed.append(f"FRAME_SKIP: {FRAME_SKIP} → {new_val}")
+        FRAME_SKIP = int(new_val)
+
+    new_val = engine_config.get('stopDistance')
+    if new_val is not None and new_val != STOP_DISTANCE:
+        changed.append(f"STOP_DISTANCE: {STOP_DISTANCE} → {new_val}")
+        STOP_DISTANCE = int(new_val)
+
+    new_val = engine_config.get('moveDistance')
+    if new_val is not None and new_val != MOVE_DISTANCE:
+        changed.append(f"MOVE_DISTANCE: {MOVE_DISTANCE} → {new_val}")
+        MOVE_DISTANCE = int(new_val)
+
+    new_val = engine_config.get('stopConfirmFrames')
+    if new_val is not None and new_val != STOP_CONFIRM_FRAMES:
+        changed.append(f"STOP_CONFIRM_FRAMES: {STOP_CONFIRM_FRAMES} → {new_val}")
+        STOP_CONFIRM_FRAMES = int(new_val)
+
+    new_val = engine_config.get('moveConfirmFrames')
+    if new_val is not None and new_val != MOVE_CONFIRM_FRAMES:
+        changed.append(f"MOVE_CONFIRM_FRAMES: {MOVE_CONFIRM_FRAMES} → {new_val}")
+        MOVE_CONFIRM_FRAMES = int(new_val)
+
+    new_val = engine_config.get('vehicleClasses')
+    if new_val is not None and new_val != VEHICLE_CLASSES:
+        changed.append(f"VEHICLE_CLASSES: {VEHICLE_CLASSES} → {new_val}")
+        VEHICLE_CLASSES = list(new_val)
+
+    new_val = engine_config.get('plateRegex')
+    if new_val is not None and new_val != PLATE_REGEX:
+        changed.append(f"PLATE_REGEX: {PLATE_REGEX} → {new_val}")
+        PLATE_REGEX = str(new_val)
+
+    if changed:
+        print(f"🔄 Konfigurasi Engine diperbarui dari Dashboard:")
+        for c in changed:
+            print(f"   ↳ {c}")
 
 def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
     try:
@@ -487,13 +539,17 @@ def main():
     
     while running:
         try:
-            configs = fetch_configs()
-            if configs is None:
+            response_data = fetch_configs()
+            if response_data is None:
                 if not started_engines:
                     print("⏳ Menunggu konfigurasi awal dari Dashboard...")
                 else:
                     print("⚠️ Gagal sinkronisasi konfigurasi, mencoba lagi...")
             else:
+                # Apply engine configuration from Dashboard
+                apply_engine_config(response_data.get('engineConfig'))
+
+                configs = response_data.get('cameras', [])
                 current_active_ids = [str(c['id']) for c in configs if c.get('isActive', True)]
                 
                 # 1. Hentikan engine yang tidak lagi aktif atau dihapus
