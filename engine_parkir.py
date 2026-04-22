@@ -23,25 +23,17 @@ parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking Syst
 args = parser.parse_args()
 
 # =============================
-# SUPPRESS FFMPEG HEVC WARNINGS
+# SUPPRESS FFMPEG DECODER WARNINGS
 # =============================
-def suppress_ffmpeg_logs():
-    """Menekan warning HEVC decoder (PPS/VPS/SPS errors) yang non-fatal."""
-    try:
-        import ctypes
-        import ctypes.util
-        avutil_name = ctypes.util.find_library('avutil')
-        if avutil_name:
-            avutil = ctypes.cdll.LoadLibrary(avutil_name)
-            # AV_LOG_ERROR = 16 (hanya tampilkan ERROR ke atas)
-            avutil.av_log_set_level(16)
-            print("✅ FFmpeg log level: ERROR (HEVC warnings disembunyikan)")
-        else:
-            print("⚠️ libavutil tidak ditemukan, FFmpeg warnings tetap tampil")
-    except Exception as e:
-        print(f"⚠️ Gagal mengatur FFmpeg log level: {e}")
-
-suppress_ffmpeg_logs()
+# FFmpeg (bundled dalam OpenCV) menulis warning HEVC/H.264 langsung ke
+# C-level stderr (fd 2). Kita redirect fd 2 ke /dev/null, tapi simpan
+# salinan fd asli agar Python sys.stderr tetap berfungsi untuk traceback.
+_original_stderr_fd = os.dup(2)
+_devnull_fd = os.open(os.devnull, os.O_WRONLY)
+os.dup2(_devnull_fd, 2)
+os.close(_devnull_fd)
+sys.stderr = os.fdopen(_original_stderr_fd, 'w', closefd=False)
+print("✅ FFmpeg stderr dialihkan ke /dev/null (warnings disembunyikan)")
 
 # Optimasi RTSP: TCP transport + probe settings + discard corrupt frames
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
