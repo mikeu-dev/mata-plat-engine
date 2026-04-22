@@ -22,6 +22,36 @@ load_dotenv()
 parser = argparse.ArgumentParser(description='Mata Plat Engine - AI Parking System')
 args = parser.parse_args()
 
+# =============================
+# SUPPRESS FFMPEG HEVC WARNINGS
+# =============================
+def suppress_ffmpeg_logs():
+    """Menekan warning HEVC decoder (PPS/VPS/SPS errors) yang non-fatal."""
+    try:
+        import ctypes
+        import ctypes.util
+        avutil_name = ctypes.util.find_library('avutil')
+        if avutil_name:
+            avutil = ctypes.cdll.LoadLibrary(avutil_name)
+            # AV_LOG_ERROR = 16 (hanya tampilkan ERROR ke atas)
+            avutil.av_log_set_level(16)
+            print("✅ FFmpeg log level: ERROR (HEVC warnings disembunyikan)")
+        else:
+            print("⚠️ libavutil tidak ditemukan, FFmpeg warnings tetap tampil")
+    except Exception as e:
+        print(f"⚠️ Gagal mengatur FFmpeg log level: {e}")
+
+suppress_ffmpeg_logs()
+
+# Optimasi RTSP: TCP transport + probe settings + discard corrupt frames
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+    "rtsp_transport;tcp|"
+    "analyzeduration;5000000|"
+    "probesize;5000000|"
+    "fflags;+discardcorrupt"
+)
+print("📡 RTSP Transport: TCP (stabilitas optimal)")
+
 # DETEKSI DEVICE (GPU/CPU)
 FORCE_DEVICE = os.getenv("AI_DEVICE", "auto").lower()
 if FORCE_DEVICE == "auto":
@@ -107,6 +137,8 @@ class VideoCaptureAsync:
             
             self.cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)
+            self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
             time.sleep(2)
             
             self.ret, self.frame = self.cap.read()
