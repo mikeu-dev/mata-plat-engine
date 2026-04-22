@@ -112,16 +112,129 @@ except Exception as e:
 # ASYNC CAMERA
 # =============================
 
+import subprocess
+import numpy as np
+
 class VideoCaptureAsync:
+    """Async camera capture yang mendukung RTSP dan HLS streams.
+    
+    - RTSP (rtsp://): Menggunakan cv2.VideoCapture langsung
+    - HLS (http/https m3u8): Menggunakan ffmpeg subprocess pipe
+      karena OpenCV tidak bisa forward API key ke HLS segment requests.
+    """
     def __init__(self, src, gate_id, stop_event=None):
         self.src = src
         self.gate_id = gate_id
         self.cap = None
+        self._ffmpeg_proc = None
+        self._is_hls = src.startswith('http://') or src.startswith('https://')
         self.ret = False
         self.frame = None
         self.stop_event = stop_event or threading.Event()
         self.connected = False
+        self._frame_width = 0
+        self._frame_height = 0
 
+        if self._is_hls:
+            self._init_hls()
+        else:
+            self._init_rtsp()
+
+    def _init_hls(self):
+        """Inisialisasi HLS stream via ffmpeg subprocess."""
+        max_retries = 5
+        for i in range(max_retries):
+            if self.stop_event.is_set():
+                self._safe_release()
+                return
+
+            print(f"📡 Mencoba menghubungkan ke HLS stream ({i+1}/{max_retries})...")
+            self._kill_ffmpeg()
+
+            # Probe resolusi dulu
+            if self._frame_width == 0:
+                probe_cmd = [
+                    'ffprobe', '-v', 'error',
+                    '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height',
+                    '-of', 'csv=p=0:s=x',
+                    self.src
+                ]
+                try:
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=15)
+                    if result.returncode == 0 and 'x' in result.stdout.strip():
+                        parts = result.stdout.strip().split('x')
+                        self._frame_width = int(parts[0])
+                        self._frame_height = int(parts[1])
+                        print(f"📐 Resolusi stream: {self._frame_width}x{self._frame_height}")
+                except Exception:
+                    pass
+
+            # Fallback resolusi jika probe gagal
+            if self._frame_width == 0:
+                self._frame_width = 960
+                self._frame_height = 540
+                print(f"📐 Menggunakan resolusi default: {self._frame_width}x{self._frame_height}")
+
+            # Start ffmpeg subprocess
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-reconnect', '1',
+                '-reconnect_streamed', '1',
+                '-reconnect_delay_max', '5',
+                '-i', self.src,
+                '-f', 'rawvideo',
+                '-pix_fmt', 'bgr24',
+                '-vsync', '0',
+                '-an',
+                '-sn',
+                '-v', 'error',
+                'pipe:1'
+            ]
+            try:
+                self._ffmpeg_proc = subprocess.Popen(
+                    ffmpeg_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=self._frame_width * self._frame_height * 3 * 2
+                )
+            except FileNotFoundError:
+                print("❌ ffmpeg tidak ditemukan. Install: sudo apt install ffmpeg")
+                return
+
+            # Tunggu frame pertama (interruptible)
+            for _ in range(10):
+                if self.stop_event.is_set():
+                    self._safe_release()
+                    return
+                time.sleep(0.5)
+                frame = self._read_ffmpeg_frame()
+                if frame is not None:
+                    self.ret = True
+                    self.frame = frame
+                    print("✅ Koneksi HLS stream stabil.")
+                    break
+
+            if self.ret:
+                break
+            else:
+                print(f"⚠️ Percobaan {i+1} gagal membaca frame dari HLS.")
+                self._kill_ffmpeg()
+                for _ in range(2):
+                    if self.stop_event.is_set():
+                        self._safe_release()
+                        return
+                    time.sleep(0.5)
+
+        if not self.stop_event.is_set() and self.ret:
+            self.connected = True
+            threading.Thread(target=self.update, daemon=True).start()
+        elif not self.stop_event.is_set():
+            print(f"❌ Gagal terhubung ke HLS stream setelah {max_retries} percobaan.")
+            self._safe_release()
+
+    def _init_rtsp(self):
+        """Inisialisasi RTSP stream via cv2.VideoCapture."""
         max_retries = 5
         for i in range(max_retries):
             # Cek apakah engine sudah diminta berhenti sebelum retry
@@ -134,7 +247,7 @@ class VideoCaptureAsync:
                 self.cap.release()
                 self.cap = None
             
-            self.cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
+            self.cap = cv2.VideoCapture(self.src, cv2.CAP_FFMPEG)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)
             self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
@@ -173,42 +286,103 @@ class VideoCaptureAsync:
             print(f"❌ Gagal terhubung ke kamera setelah {max_retries} percobaan.")
             self._safe_release()
 
+    def _read_ffmpeg_frame(self):
+        """Baca satu frame dari ffmpeg stdout pipe."""
+        if self._ffmpeg_proc is None or self._ffmpeg_proc.poll() is not None:
+            return None
+        frame_size = self._frame_width * self._frame_height * 3
+        try:
+            raw = self._ffmpeg_proc.stdout.read(frame_size)
+            if len(raw) != frame_size:
+                return None
+            frame = np.frombuffer(raw, dtype=np.uint8).reshape(
+                (self._frame_height, self._frame_width, 3)
+            )
+            return frame
+        except Exception:
+            return None
+
+    def _kill_ffmpeg(self):
+        """Terminate ffmpeg subprocess."""
+        if self._ffmpeg_proc is not None:
+            try:
+                self._ffmpeg_proc.kill()
+                self._ffmpeg_proc.wait(timeout=3)
+            except Exception:
+                pass
+            self._ffmpeg_proc = None
+
     def _safe_release(self):
-        """Release capture dari thread yang sama yang memilikinya."""
+        """Release capture/ffmpeg dari thread yang sama yang memilikinya."""
         if self.cap is not None:
             try:
                 self.cap.release()
             except Exception:
                 pass
             self.cap = None
+        self._kill_ffmpeg()
 
     def update(self):
         while not self.stop_event.is_set():
-            if self.cap is None:
-                break
-            try:
-                ret, frame = self.cap.read()
-            except Exception:
-                break
-            if ret:
-                self.ret = ret
-                self.frame = frame
-                
-                # Encode ke JPEG secara real-time di thread kamera (Sangat Cepat)
-                # Ini memastikan monitoring di dashboard tetap lancar (30 FPS)
+            if self._is_hls:
+                # HLS: baca dari ffmpeg pipe
+                frame = self._read_ffmpeg_frame()
+                if frame is not None:
+                    self.ret = True
+                    self.frame = frame
+                else:
+                    # FFmpeg mungkin crash/disconnect, coba restart
+                    if self._ffmpeg_proc and self._ffmpeg_proc.poll() is not None:
+                        print(f"⚠️ FFmpeg process terminated, mencoba reconnect HLS...")
+                        self._kill_ffmpeg()
+                        ffmpeg_cmd = [
+                            'ffmpeg',
+                            '-reconnect', '1',
+                            '-reconnect_streamed', '1',
+                            '-reconnect_delay_max', '5',
+                            '-i', self.src,
+                            '-f', 'rawvideo',
+                            '-pix_fmt', 'bgr24',
+                            '-vsync', '0',
+                            '-an', '-sn',
+                            '-v', 'error',
+                            'pipe:1'
+                        ]
+                        try:
+                            self._ffmpeg_proc = subprocess.Popen(
+                                ffmpeg_cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL,
+                                bufsize=self._frame_width * self._frame_height * 3 * 2
+                            )
+                        except Exception:
+                            break
+                    time.sleep(0.01)
+            else:
+                # RTSP: baca dari cv2.VideoCapture
+                if self.cap is None:
+                    break
+                try:
+                    ret, frame = self.cap.read()
+                except Exception:
+                    break
+                if ret:
+                    self.ret = ret
+                    self.frame = frame
+                else:
+                    time.sleep(0.01)
+
+            # Encode ke JPEG untuk dashboard monitoring (kedua mode)
+            if self.ret and self.frame is not None:
                 from frame_shared import latest_frames, frame_timestamps
                 try:
                     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 65]
-                    _, buffer = cv2.imencode('.jpg', frame, encode_param)
-                    # Gunakan integer gate_id agar cocok dengan Flask
+                    _, buffer = cv2.imencode('.jpg', self.frame, encode_param)
                     gid_int = int(self.gate_id)
                     latest_frames[gid_int] = buffer.tobytes()
-                    # Simpan timestamp untuk efisiensi di Flask
                     frame_timestamps[gid_int] = time.time()
                 except Exception:
                     pass
-            else:
-                time.sleep(0.01)
 
         # Release di thread yang sama (update thread) agar thread-safe
         self._safe_release()
