@@ -580,11 +580,16 @@ def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
             headers["x-signature"] = signature
             headers["x-timestamp"] = str(timestamp)
             
-        requests.post(DASHBOARD_API_URL, data=payload_str, headers=headers, timeout=5)
-        print(f"📡 Sync {action}: [{plate}] @ Camera {gate_id} (Secured with HMAC)")
+        response = requests.post(DASHBOARD_API_URL, data=payload_str, headers=headers, timeout=10)
+        if response.status_code in [200, 201]:
+            print(f"📡 Sync {action}: [{plate}] @ Camera {gate_id} (Status: {response.status_code})")
+        else:
+            print(f"❌ Dashboard menolak data ({response.status_code}): {response.text[:100]}")
+    except requests.exceptions.Timeout:
+        print(f"❌ Timeout saat mengirim data {action} ke Dashboard")
     except Exception as e:
         if DEBUG_MODE:
-            print(f"❌ Failed to sync: {str(e)}")
+            print(f"❌ Failed to sync {action}: {str(e)}")
 
 # =============================
 # OCR SYSTEM
