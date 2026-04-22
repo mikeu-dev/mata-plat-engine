@@ -789,7 +789,7 @@ class CamEngine:
                         # Jika plat belum ketemu, gunakan placeholder UNKNOWN dengan ID tracker
                         display_plate = p["plat"] if p["plat"] != "Scanning..." else f"TANPA-PLAT-{tid}"
                         
-                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring'] else 'exit'
+                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring', 'area_monitoring'] else 'exit'
                         sync_to_dashboard(display_plate, action, self.gate_id)
                         
                         # Jika sudah ada plat asli, tandai sudah tersimpan permanen
@@ -803,7 +803,7 @@ class CamEngine:
 
                     # UPDATE DATA: Jika sebelumnya kirim placeholder, dan sekarang plat asli sudah ketemu
                     if p.get("placeholder_sent") and p["plat"] != "Scanning...":
-                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring'] else 'exit'
+                        action = 'entry' if self.type in ['entry_gate', 'street_monitoring', 'area_monitoring'] else 'exit'
                         print(f"🔄 [Cam:{self.name}] Mengupdate data placeholder ID:{tid} dengan plat asli: {p['plat']}")
                         sync_to_dashboard(p["plat"], action, self.gate_id)
                         p["placeholder_sent"] = False
