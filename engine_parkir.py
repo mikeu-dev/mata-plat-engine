@@ -662,6 +662,7 @@ class CamEngine:
         self.url = config['cameraUrl']
         self.type = str(config.get('deviceType', config.get('type', ''))).strip()
         self.roi_polygon = config.get('roiPolygon')
+        self.is_scanning = config.get('isScanning', False) # Tambahkan ini
         self.last_snapshot_time = 0
         self.snapshot_dir = os.path.join("..", "mata-plat", "static", "uploads", "snapshots")
         os.makedirs(self.snapshot_dir, exist_ok=True)
@@ -750,6 +751,10 @@ class CamEngine:
             
             # Panggil pembersihan data secara berkala
             self.cleanup_old_data()
+
+            # --- SKIP AI JIKA SCANNING NONAKTIF ---
+            if not self.is_scanning:
+                continue
             
             # Gunakan model lokal agar tracker tidak bercampur antar kamera
             results = self.model_vehicle.track(frame, persist=True, conf=0.35, imgsz=640, verbose=False)
@@ -932,6 +937,11 @@ def main():
                             engine = CamEngine(cfg)
                             started_engines[gid] = engine
                             threading.Thread(target=engine.process, daemon=True).start()
+                        else:
+                            # Update config tanpa restart thread
+                            started_engines[gid].roi_polygon = cfg.get('roiPolygon')
+                            started_engines[gid].is_scanning = cfg.get('isScanning', False)
+                            started_engines[gid].type = str(cfg.get('deviceType', cfg.get('type', started_engines[gid].type))).strip()
                             
         except Exception as e:
             if not running:
