@@ -557,7 +557,7 @@ def apply_engine_config(engine_config):
         for c in changed:
             print(f"   ↳ {c}")
 
-def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
+def sync_to_dashboard(plate, action, gate_id, v_type_id=1, frame=None):
     try:
         data = {
             "plate": plate,
@@ -565,6 +565,17 @@ def sync_to_dashboard(plate, action, gate_id, v_type_id=1):
             "gate_id": gate_id,
             "vehicle_type_id": v_type_id
         }
+
+        # Tambahkan dokumentasi foto jika ada frame
+        if frame is not None:
+            try:
+                # Resize sedikit agar tidak terlalu berat saat dikirim via network
+                small_frame = cv2.resize(frame, (640, 360))
+                _, buffer = cv2.imencode('.jpg', small_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                data["image"] = f"data:image/jpeg;base64,{img_base64}"
+            except Exception as ex:
+                print(f"⚠️ Gagal memproses gambar untuk sync: {ex}")
         
         # Use separators to ensure consistent JSON formatting for HMAC
         payload_str = json.dumps(data, separators=(',', ':'))
@@ -795,7 +806,7 @@ class CamEngine:
                         is_monitoring = "monitoring" in cam_type_lower or "entry" in cam_type_lower
                         action = 'entry' if is_monitoring else 'exit'
                         
-                        sync_to_dashboard(display_plate, action, self.gate_id)
+                        sync_to_dashboard(display_plate, action, self.gate_id, frame=frame)
                         
                         # Jika sudah ada plat asli, tandai sudah tersimpan permanen
                         # Jika masih placeholder, biarkan db_saved=False agar bisa diupdate nanti saat plat ketemu
@@ -813,7 +824,7 @@ class CamEngine:
                         action = 'entry' if is_monitoring else 'exit'
                         
                         print(f"🔄 [Cam:{self.name}] Mengupdate data placeholder ID:{tid} dengan plat asli: {p['plat']}")
-                        sync_to_dashboard(p["plat"], action, self.gate_id)
+                        sync_to_dashboard(p["plat"], action, self.gate_id, frame=frame)
                         p["placeholder_sent"] = False
                         p["db_saved"] = True
 
