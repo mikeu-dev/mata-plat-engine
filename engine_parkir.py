@@ -948,9 +948,13 @@ def main():
                 break
             print(f"❌ Error in Manager Loop: {e}")
             
-        # Sleep dalam interval kecil agar bisa di-interrupt dengan bersih
+        # Sleep dalam interval kecil agar bisa di-interrupt dengan bersih atau di-trigger reload
         for _ in range(30):
             if not running:
+                break
+            if frame_shared.reload_event.is_set():
+                print("🔔 [Reload] Menerima permintaan reload konfigurasi segera...")
+                frame_shared.reload_event.clear()
                 break
             time.sleep(1)
 

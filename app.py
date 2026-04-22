@@ -173,5 +173,44 @@ def video_feed(gate_id):
     """
     return Response(gen_frames(gate_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route("/api/v1/snapshot/<int:gate_id>")
+@require_api_key
+def snapshot(gate_id):
+    """
+    Get latest single frame snapshot for a gate
+    ---
+    parameters:
+      - name: gate_id
+        in: path
+        type: integer
+        required: true
+    security:
+      - APIKeyHeader: []
+    responses:
+      200:
+        description: JPEG image snapshot
+      404:
+        description: Snapshot not available
+    """
+    frame_bytes = frame_shared.latest_frames.get(int(gate_id))
+    if frame_bytes:
+        return Response(frame_bytes, mimetype='image/jpeg')
+    return jsonify({"error": "Snapshot not available. Device might be offline or still connecting."}), 404
+
+@app.route("/api/v1/reload", methods=["POST"])
+@require_api_key
+def reload():
+    """
+    Trigger immediate configuration reload from Dashboard
+    ---
+    security:
+      - APIKeyHeader: []
+    responses:
+      200:
+        description: Reload triggered successfully
+    """
+    frame_shared.reload_event.set()
+    return jsonify({"success": True, "message": "Reload triggered"}), 200
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("STREAM_PORT", 5000)), debug=os.getenv("FLASK_DEBUG", "True") == "True")
