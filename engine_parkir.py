@@ -1,5 +1,6 @@
 import os
 import sys
+import base64
 import cv2
 import numpy as np
 import time
@@ -660,6 +661,7 @@ class CamEngine:
         self.name = config['name']
         self.url = config['cameraUrl']
         self.type = str(config.get('deviceType', config.get('type', ''))).strip()
+        self.roi_polygon = config.get('roiPolygon') # Tambahkan ini
         print(f"DEBUG: [Cam:{self.name}] Detected Type: '{self.type}'")
         self.parking_data = {}
         self.running = True
@@ -748,6 +750,21 @@ class CamEngine:
 
                 for box, tid, cls_idx in zip(boxes, ids, clss):
                     if cls_idx not in VEHICLE_CLASSES: continue
+                    
+                    x1, y1, x2, y2 = box
+                    center = (int((x1+x2)/2), int((y1+y2)/2))
+
+                    # ROI CHECK: Hanya proses jika titik tengah kendaraan berada di dalam polygon
+                    if hasattr(self, 'roi_polygon') and self.roi_polygon is not None and len(self.roi_polygon) >= 3:
+                        # Convert normalized ROI to pixel coordinates
+                        h, w = frame.shape[:2]
+                        pts = np.array([[int(p['x'] * w), int(p['y'] * h)] for p in self.roi_polygon], np.int32)
+                        
+                        dist_to_roi = cv2.pointPolygonTest(pts, center, False)
+                        if dist_to_roi < 0:
+                            # Kendaraan di luar area parkir, abaikan
+                            continue
+
                     current_ids.add(tid)
 
                     if tid not in self.parking_data:
